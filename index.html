@@ -226,12 +226,13 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
 
     <div id="recUploadPanel" class="hidden">
       <h2>Upload recording</h2>
-      <div class="caption">Attaches the file to your library. Browsers can't reliably transcribe an existing audio/video file directly — for accuracy, paste a transcript from elsewhere, or use "Play &amp; try live transcribe" below (experimental: plays the file while listening through your microphone).</div>
+      <div class="caption">Attaches the file to your library, then transcribes it with AI — including speaker labels and timestamps where the audio allows.</div>
       <input type="file" id="upFile" accept="audio/*,video/*" onchange="handleUploadFile(event)">
       <div id="upStatus" class="caption"></div>
       <div class="actions-toolbar hidden" id="upControls">
         <audio id="upAudio" controls style="max-width:100%;"></audio>
-        <button class="btn secondary" onclick="playAndTryTranscribe()">▶ Play &amp; try live transcribe</button>
+        <button class="btn secondary" onclick="aiTranscribeUpload()">🎯 Transcribe with AI (speaker ID + timestamps)</button>
+        <button class="btn outline small" onclick="playAndTryTranscribe()">Or try browser live-transcribe instead</button>
         <input type="text" id="upName" placeholder="Recording name (optional)" style="max-width:260px;">
         <button class="btn" onclick="saveUploadedRecording()">Save to library</button>
       </div>
@@ -241,6 +242,7 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
 
   <div class="section">
     <h2>Saved recordings</h2>
+    <div class="caption">AI transcription uses the free Puter.js speech-to-text service — no key needed, but it does need an internet connection.</div>
     <div id="recordingsList"><p class="caption">Loading…</p></div>
   </div>
 </section>
@@ -1170,16 +1172,20 @@ async function renderRecordingsList(){
   const wrap = document.getElementById('recordingsList');
   const recs = (await dbGetAll()).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
   wrap.innerHTML = recs.length ? recs.map(r=>`
-    <div style="border:1px solid var(--border);padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-      <div>
-        <input type="text" value="${escapeHtml(r.name)}" style="border:none;font-weight:600;padding:2px 0;" onchange="renameRecording('${r.id}',this.value)">
-        <div class="caption" style="margin:0;">${r.type==='live'?'Recorded':'Uploaded'} · ${fmtTime(r.durationSec||0)} · ${new Date(r.createdAt).toLocaleString()}</div>
+    <div style="border:1px solid var(--border);padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <input type="text" value="${escapeHtml(r.name)}" style="border:none;font-weight:600;padding:2px 0;" onchange="renameRecording('${r.id}',this.value)">
+          <div class="caption" style="margin:0;">${r.type==='live'?'Recorded':'Uploaded'} · ${fmtTime(r.durationSec||0)} · ${new Date(r.createdAt).toLocaleString()}${r.transcribedMode?' · AI-transcribed ('+(r.transcribedMode==='diarized'?'speaker labels':'timestamps')+')':''}</div>
+        </div>
+        <div class="rowtools">
+          <button class="btn small secondary" onclick="playRecording('${r.id}')">▶ Play</button>
+          <button class="btn small secondary" onclick="transcribeRecordingWithAI('${r.id}')">🎯 AI transcribe</button>
+          ${r.transcript?`<button class="btn small secondary" onclick="loadRecordingTranscript('${r.id}')">Use transcript</button>`:''}
+          <button class="btn small outline" onclick="deleteRecordingUI('${r.id}')">Delete</button>
+        </div>
       </div>
-      <div class="rowtools">
-        <button class="btn small secondary" onclick="playRecording('${r.id}')">▶ Play</button>
-        ${r.transcript?`<button class="btn small secondary" onclick="loadRecordingTranscript('${r.id}')">Use transcript</button>`:''}
-        <button class="btn small outline" onclick="deleteRecordingUI('${r.id}')">Delete</button>
-      </div>
+      <div id="recStatus_${r.id}"></div>
     </div>`).join('') : '<p class="caption">No recordings saved yet.</p>';
 }
 async function renameRecording(id, name){
@@ -1198,6 +1204,58 @@ async function playRecording(id){
 async function loadRecordingTranscript(id){
   const recs = await dbGetAll(); const r = recs.find(x=>x.id===id); if(!r) return;
   showScreen('new'); document.getElementById('mInput').value = r.transcript||'';
+}
+
+/* ---------- AI transcription (speaker ID + timestamps, via free Puter speech2txt) ---------- */
+function fmtTimestamp(sec){
+  sec = Math.floor(sec||0);
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
+  return (h>0?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function formatTranscriptResult(result, diarize){
+  if(typeof result === 'string') return result;
+  const segs = (result && (result.segments||result.words)) || null;
+  if(diarize && segs && segs.length && segs[0].speaker !== undefined){
+    return segs.map(s=>`[${fmtTimestamp(s.start)}] Speaker ${s.speaker}: ${(s.text||'').trim()}`).join('\n');
+  }
+  if(segs && segs.length && segs[0].start !== undefined){
+    return segs.map(s=>`[${fmtTimestamp(s.start)}] ${(s.text||'').trim()}`).join('\n');
+  }
+  if(result && typeof result.text === 'string') return result.text;
+  return JSON.stringify(result);
+}
+async function runAITranscription(blob){
+  await loadPuter();
+  try{
+    const result = await puter.ai.speech2txt(blob, {model:'gpt-4o-transcribe-diarize', response_format:'diarized_json'});
+    return {text: formatTranscriptResult(result, true), mode:'diarized'};
+  }catch(e1){
+    const result = await puter.ai.speech2txt(blob, {model:'gpt-4o-mini-transcribe', response_format:'verbose_json', timestamp_granularities:['segment']});
+    return {text: formatTranscriptResult(result, false), mode:'plain'};
+  }
+}
+async function transcribeRecordingWithAI(id){
+  const recs = await dbGetAll(); const r = recs.find(x=>x.id===id); if(!r) return;
+  const statusEl = document.getElementById('recStatus_'+id);
+  if(statusEl) statusEl.innerHTML = '<div class="caption"><span class="spinner"></span>Transcribing with AI…</div>';
+  try{
+    const {text, mode} = await runAITranscription(r.blob);
+    r.transcript = text; r.transcribedMode = mode;
+    await dbPut(r);
+    renderRecordingsList();
+  }catch(err){
+    if(statusEl) statusEl.innerHTML = '<div class="msg error">'+escapeHtml(err.message)+'</div>';
+  }
+}
+async function aiTranscribeUpload(){
+  if(!uploadedFile){ alert('Choose a file first.'); return; }
+  document.getElementById('upStatus').innerHTML = '<div class="caption"><span class="spinner"></span>Transcribing with AI…</div>';
+  try{
+    const {text, mode} = await runAITranscription(uploadedFile);
+    document.getElementById('upStatus').innerHTML = `<div class="msg ok">Transcribed (${mode==='diarized'?'with speaker labels':'timestamps only — speaker labels unavailable for this audio'}).</div><textarea rows="6" id="upTranscriptDraft">${escapeHtml(text)}</textarea>`;
+  }catch(err){
+    document.getElementById('upStatus').innerHTML = '<div class="msg error">'+escapeHtml(err.message)+'</div>';
+  }
 }
 
 /* ---------- upload recording ---------- */
