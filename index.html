@@ -83,6 +83,11 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
 .actions-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
 .msg{padding:10px 14px;border:1px solid var(--border);font-size:.85rem;margin-bottom:14px;}
 .msg.error{border-color:var(--danger);color:var(--danger);background:#FBF0EF;}
+.barrow{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:.86rem;}
+.barrow .lbl{width:170px;flex-shrink:0;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.barrow .track{flex:1;background:#EDEEE9;height:14px;position:relative;}
+.barrow .fill{background:var(--accent);height:100%;}
+.barrow .val{width:44px;text-align:right;flex-shrink:0;}
 .msg.ok{border-color:var(--ok);color:var(--ok);background:#F0F7F3;}
 @media print{
   .app-header,nav.tabs,.no-print,footer{display:none !important;}
@@ -110,6 +115,7 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
   <button data-tab="review" onclick="showScreen('review')">Review &amp; Export</button>
   <button data-tab="library" onclick="showScreen('library')">Meeting Library</button>
   <button data-tab="tracker" onclick="showScreen('tracker')">Action Tracker</button>
+  <button data-tab="insights" onclick="showScreen('insights')">Insights</button>
 </nav>
 
 <main>
@@ -169,10 +175,10 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     </div>
     <div class="grid3">
       <div class="field"><label>Meeting type / template</label>
-        <select id="mType">
+        <select id="mType" onchange="toggleTypeFields()">
           <option>Board Meeting</option><option>Management Meeting</option><option>Staff Meeting</option>
           <option>Review Meeting</option><option>Committee Meeting</option><option>Training / Workshop</option>
-          <option>General Meeting</option>
+          <option>SHG/VO/CLF Meeting (DAY-NRLM)</option><option>General Meeting</option>
         </select>
       </div>
       <div class="field"><label>Date</label><input type="date" id="mDate"></div>
@@ -195,6 +201,35 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     </div>
     <div class="field"><label>Special invitees</label><input type="text" id="mInvitees"></div>
     <div class="field"><label>Agenda (optional — leave blank to let AI infer from the notes)</label><textarea id="mAgenda"></textarea></div>
+
+    <div class="grid2" id="quorumFields">
+      <div class="field"><label>Total members on the body (for quorum)</label><input type="text" id="mTotalMembers" placeholder="e.g. 9"></div>
+      <div class="field"><label>Quorum required</label><input type="text" id="mQuorumReq" placeholder="e.g. 3 or 1/3rd"></div>
+    </div>
+
+    <div id="shgFields" class="hidden">
+      <div class="grid2">
+        <div class="field"><label>SHG / VO / CLF name</label><input type="text" id="mShgName"></div>
+        <div class="field"><label>Federation level</label>
+          <select id="mShgLevel"><option>SHG</option><option>Village Organisation (VO)</option><option>Cluster Level Federation (CLF)</option></select>
+        </div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Savings collected this period</label><input type="text" id="mShgSavings"></div>
+        <div class="field"><label>Loans disbursed</label><input type="text" id="mShgLoans"></div>
+        <div class="field"><label>Recovery / NPA position</label><input type="text" id="mShgNpa"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>CRP / Vitta Sakhi present</label><input type="text" id="mShgCrp" placeholder="Name(s), or leave blank"></div>
+        <div class="field"><label>Bank linkage status</label><input type="text" id="mShgBankLinkage"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Continue from a previous meeting (optional)</label>
+      <select id="mPrevMeeting" onchange="renderCarryForwardPreview()"><option value="">— None —</option></select>
+      <div id="carryForwardPreview" class="caption"></div>
+    </div>
   </div>
 
   <div class="section">
@@ -261,6 +296,21 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
 <section id="screen-review" class="hidden">
   <div id="reviewEmpty" class="section"><p>No draft yet. Start from <a href="#" onclick="showScreen('new');return false;">New Meeting</a>.</p></div>
   <div id="reviewBody" class="hidden">
+
+    <div class="section">
+      <div id="quorumBadge"></div>
+      <div class="rowtools" style="align-items:center;flex-wrap:wrap;">
+        <label style="margin:0;">Minutes status:</label>
+        <select id="rConfirmStatus" onchange="updateConfirmStatus()">
+          <option>Draft</option><option>Circulated</option><option>Confirmed</option>
+        </select>
+        <span id="confirmDetailWrap" class="hidden" style="display:flex;gap:6px;align-items:center;">
+          <input type="date" id="rConfirmDate" onchange="updateConfirmStatus()" style="width:auto;">
+          <input type="text" id="rConfirmMeetingRef" placeholder="Confirmed in meeting on / ref." onchange="updateConfirmStatus()" style="width:220px;">
+        </span>
+      </div>
+      <div class="caption" style="margin-top:6px;">Standard secretarial practice: minutes are drafted after the meeting, circulated, then formally confirmed in the next meeting of the same body.</div>
+    </div>
 
     <div class="section">
       <h2>Executive summary</h2>
@@ -374,6 +424,30 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
   </div>
 </section>
 
+<!-- ============ INSIGHTS ============ -->
+<section id="screen-insights" class="hidden">
+  <div class="section">
+    <h2>Overview</h2>
+    <div class="stat-row" id="insightStats"></div>
+  </div>
+  <div class="section">
+    <h2>Meetings by month</h2>
+    <div id="insightMeetingsByMonth"></div>
+  </div>
+  <div class="section">
+    <h2>Action point completion</h2>
+    <div id="insightCompletion"></div>
+  </div>
+  <div class="section">
+    <h2>Busiest people / departments (open action points)</h2>
+    <div id="insightTopOwners"></div>
+  </div>
+  <div class="section">
+    <h2>Meeting types</h2>
+    <div id="insightTypes"></div>
+  </div>
+</section>
+
 <!-- ============ SETTINGS ============ -->
 <section id="screen-settings" class="hidden">
   <div class="section">
@@ -411,7 +485,7 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
       <select id="setTemplate">
         <option>Board Meeting</option><option>Management Meeting</option><option>Staff Meeting</option>
         <option>Review Meeting</option><option>Committee Meeting</option><option>Training / Workshop</option>
-        <option>General Meeting</option>
+        <option>SHG/VO/CLF Meeting (DAY-NRLM)</option><option>General Meeting</option>
       </select>
     </div>
     <button class="btn" onclick="saveSettings()">Save settings</button>
@@ -490,6 +564,7 @@ function showScreen(name){
   if(name==='review'){ renderReview(); populateVoiceList(); renderQAHistory(); }
   if(name==='library') renderLibrary();
   if(name==='tracker') renderTracker();
+  if(name==='insights') renderInsights();
   if(name==='settings') loadSettingsForm();
   if(name==='record'){ switchRecordTab('live'); renderRecordingsList(); checkRecordingSupport(); }
 }
@@ -501,6 +576,39 @@ function startNew(mode){
     : 'Type rough points, e.g. "Recovery ka performance satisfactory nahi hai. GM said all branches should review overdue accounts every Monday..."';
   if(SETTINGS.org) document.getElementById('mOrg').value = SETTINGS.org;
   if(SETTINGS.template) document.getElementById('mType').value = SETTINGS.template;
+  toggleTypeFields();
+  populatePrevMeetingSelect();
+}
+
+/* ---------- SHG/VO/CLF + quorum field toggling ---------- */
+function toggleTypeFields(){
+  const t = document.getElementById('mType').value;
+  document.getElementById('shgFields').classList.toggle('hidden', t !== 'SHG/VO/CLF Meeting (DAY-NRLM)');
+  document.getElementById('quorumFields').classList.toggle('hidden', t === 'SHG/VO/CLF Meeting (DAY-NRLM)' || t === 'Training / Workshop');
+}
+
+/* ---------- carry-forward from a previous meeting ---------- */
+function populatePrevMeetingSelect(){
+  const sel = document.getElementById('mPrevMeeting');
+  const list = [...DB.meetings].sort((a,b)=>(b.details.date||'').localeCompare(a.details.date||''));
+  sel.innerHTML = '<option value="">— None —</option>' + list.map(m=>
+    `<option value="${m.id}">${escapeHtml(m.details.title||'(untitled)')} — ${escapeHtml(m.details.date||'')} (${escapeHtml(m.details.org||'')})</option>`
+  ).join('');
+  document.getElementById('carryForwardPreview').innerHTML = '';
+}
+function getOpenItemsFor(meeting){
+  const openActions = (meeting.actionPoints||[]).filter(a=>a.status!=='Completed' && a.status!=='Closed');
+  const pending = meeting.pendingMatters||[];
+  return {openActions, pending};
+}
+function renderCarryForwardPreview(){
+  const id = document.getElementById('mPrevMeeting').value;
+  const box = document.getElementById('carryForwardPreview');
+  if(!id){ box.innerHTML=''; return; }
+  const m = DB.meetings.find(x=>x.id===id);
+  if(!m){ box.innerHTML=''; return; }
+  const {openActions, pending} = getOpenItemsFor(m);
+  box.innerHTML = `${openActions.length} still-open action point(s) and ${pending.length} pending matter(s) from that meeting will be carried into this one.`;
 }
 
 /* ---------- settings ---------- */
@@ -671,16 +779,35 @@ async function generateMinutes(){
     chair: val('mChair'), secretary: val('mSec'), present: val('mPresent'),
     absent: val('mAbsent'), invitees: val('mInvitees'), agenda: val('mAgenda')
   };
-
   const boardMode = details.type === 'Board Meeting';
+  const shgMode = details.type === 'SHG/VO/CLF Meeting (DAY-NRLM)';
+  const shg = shgMode ? {
+    name: val('mShgName'), level: val('mShgLevel'), savings: val('mShgSavings'),
+    loans: val('mShgLoans'), npa: val('mShgNpa'), crp: val('mShgCrp'), bankLinkage: val('mShgBankLinkage')
+  } : null;
+  const quorum = computeQuorum(details.present, val('mTotalMembers'), val('mQuorumReq'));
+
+  const prevId = document.getElementById('mPrevMeeting').value;
+  const prevMeeting = prevId ? DB.meetings.find(m=>m.id===prevId) : null;
+  const carry = prevMeeting ? getOpenItemsFor(prevMeeting) : null;
+  const carryText = carry && (carry.openActions.length||carry.pending.length)
+    ? `\nMatters carried forward from the previous meeting held on ${prevMeeting.details.date||'(date not recorded)'}:\nOpen action points: ${carry.openActions.map(a=>a.action).join('; ')||'(none)'}\nPending matters: ${carry.pending.join('; ')||'(none)'}\nIf the new notes below show any of these being resolved, reflect that in the relevant decision/status; otherwise treat them as still open.`
+    : '';
+
+  const categoryList = shgMode
+    ? 'Savings & Credit, Recovery & NPA, Institution Building (SHG/VO/CLF), Capacity Building/Training, Convergence & Livelihoods, Grievances/Social Issues'
+    : 'Operational Issues, Business Performance, Recovery, Customer Service, HR/Staffing, Compliance, Technology, Pending Issues, Follow-up Actions';
+
   try{
     const p1 = `Meeting type/template: ${details.type}. Output language: ${details.lang}. Stated agenda (may be blank — infer if so): ${details.agenda || '(none given)'}.
+${shgMode ? `SHG/VO/CLF context — name: ${shg.name||'(not given)'}, level: ${shg.level}, savings collected: ${shg.savings||'(not given)'}, loans disbursed: ${shg.loans||'(not given)'}, recovery/NPA position: ${shg.npa||'(not given)'}, CRP/Vitta Sakhi present: ${shg.crp||'(not given)'}, bank linkage: ${shg.bankLinkage||'(not given)'}. Weave these into the relevant agenda items only where the meeting notes actually discuss them — do not fabricate discussion of figures not mentioned in the notes.` : ''}
+${carryText}
 
 Meeting notes / transcript:
 """
 ${input}
 """
-${boardMode ? `This is a Board Meeting: use formal corporate/Board language such as "After due deliberation, the Board noted...", "The Board considered the matter and approved...", "The Board advised that...", "The Board directed the Management to..." — but only where the source material actually supports approval/direction/resolution wording. Where it is genuinely unclear whether a matter was approved or merely discussed, set "ambiguous": true and explain why in "ambiguityNote".` : `This is a ${details.type}: organise each agenda item under one of these categories where it fits naturally — Operational Issues, Business Performance, Recovery, Customer Service, HR/Staffing, Compliance, Technology, Pending Issues, Follow-up Actions — or a short custom category if none fit. Use simpler, professional (not heavily formal) language.`}
+${boardMode ? `This is a Board Meeting: use formal corporate/Board language such as "After due deliberation, the Board noted...", "The Board considered the matter and approved...", "The Board advised that...", "The Board directed the Management to..." — but only where the source material actually supports approval/direction/resolution wording. Where it is genuinely unclear whether a matter was approved or merely discussed, set "ambiguous": true and explain why in "ambiguityNote".` : `This is a ${details.type}: organise each agenda item under one of these categories where it fits naturally — ${categoryList} — or a short custom category if none fit. Use simpler, professional (not heavily formal) language.`}
 
 Return JSON with this exact shape:
 {
@@ -714,12 +841,30 @@ Return JSON with this exact shape:
     const r2 = await callClaude(ACCURACY_RULES, p2, 1800);
     const parsed2 = parseJSON(r2);
 
+    let actionPoints = normalizeActionPoints(parsed2.actionPoints);
+    let pendingMatters = Array.isArray(parsed1.pendingMatters) ? parsed1.pendingMatters.filter(Boolean) : [];
+
+    // merge carried-forward items the AI hasn't already reproduced
+    if(carry){
+      const existingWords = actionPoints.map(a=>normWords(a.action));
+      carry.openActions.forEach(prevA=>{
+        const w = normWords(prevA.action);
+        const alreadyThere = existingWords.some(ew=> ew.size>=3 && w.size>=3 && jaccard(ew,w)>0.55);
+        if(!alreadyThere){
+          actionPoints.push({...prevA, remarks: (prevA.remarks?prevA.remarks+' ':'')+'(carried forward from previous meeting)'});
+        }
+      });
+      carry.pending.forEach(p=>{ if(!pendingMatters.some(x=>x.toLowerCase()===p.toLowerCase())) pendingMatters.push(p); });
+    }
+
     draft = {
       id: uid(), createdAt: new Date().toISOString(), details,
-      boardMode,
+      boardMode, shgMode, shg, quorum,
+      linkedPreviousMeetingId: prevId || '',
+      confirmation: {status:'Draft', date:'', ref:''},
       agendaItems: normalizeAgendaItems(parsed1.agendaItems),
-      pendingMatters: Array.isArray(parsed1.pendingMatters) ? parsed1.pendingMatters.filter(Boolean) : [],
-      actionPoints: normalizeActionPoints(parsed2.actionPoints),
+      pendingMatters,
+      actionPoints,
       executiveSummary: parsed2.executiveSummary||'',
       oneMinuteSummary: parsed2.oneMinuteSummary||'',
       rawInput: input,
@@ -734,6 +879,19 @@ Return JSON with this exact shape:
   }finally{
     btn.disabled = false;
   }
+}
+function computeQuorum(presentText, totalStr, reqStr){
+  if(!reqStr) return null;
+  const presentCount = (presentText||'').split(/[\n,]+/).map(s=>s.trim()).filter(Boolean).length;
+  const reqNum = parseFloat(reqStr);
+  const total = parseFloat(totalStr);
+  let required = null;
+  if(!isNaN(reqNum)) required = reqNum;
+  else if(reqStr.includes('/') && !isNaN(total)){
+    const parts = reqStr.split('/');
+    if(parts.length===2 && !isNaN(parseFloat(parts[0]))) required = Math.ceil(total * (parseFloat(parts[0])/parseFloat(parts[1])));
+  }
+  return {presentCount, total: isNaN(total)?null:total, requiredRaw: reqStr, required, met: required!==null ? presentCount>=required : null};
 }
 function val(id){ return document.getElementById(id).value.trim(); }
 function normalizeAgendaItems(items){
@@ -777,8 +935,33 @@ function renderReview(){
   document.getElementById('rPending').value = (draft.pendingMatters||[]).join('\n');
   renderAgendaList();
   renderActionTable();
+  renderQuorumBadge();
+  loadConfirmationUI();
   document.getElementById('aiCheckResults').innerHTML = '';
   document.getElementById('saveMsg').innerHTML = '';
+}
+function renderQuorumBadge(){
+  const box = document.getElementById('quorumBadge');
+  const q = draft.quorum;
+  if(!q || q.required===null){ box.innerHTML=''; return; }
+  const cls = q.met ? 'ok' : 'error';
+  box.innerHTML = `<div class="msg ${cls}">Quorum ${q.met?'met':'NOT met'}: ${q.presentCount} present, ${q.required} required${q.total?' (of '+q.total+' total members)':''}.</div>`;
+}
+function loadConfirmationUI(){
+  draft.confirmation = draft.confirmation || {status:'Draft', date:'', ref:''};
+  document.getElementById('rConfirmStatus').value = draft.confirmation.status;
+  document.getElementById('rConfirmDate').value = draft.confirmation.date||'';
+  document.getElementById('rConfirmMeetingRef').value = draft.confirmation.ref||'';
+  document.getElementById('confirmDetailWrap').classList.toggle('hidden', draft.confirmation.status!=='Confirmed');
+}
+function updateConfirmStatus(){
+  draft.confirmation = {
+    status: document.getElementById('rConfirmStatus').value,
+    date: document.getElementById('rConfirmDate').value,
+    ref: document.getElementById('rConfirmMeetingRef').value
+  };
+  document.getElementById('confirmDetailWrap').classList.toggle('hidden', draft.confirmation.status!=='Confirmed');
+  unsavedChanges = true;
 }
 function renderAgendaList(){
   const wrap = document.getElementById('agendaList');
@@ -975,10 +1158,12 @@ function renderLibrary(){
   document.getElementById('libraryList').innerHTML = list.length ? list.map(m=>{
     const decisions = (m.agendaItems||[]).filter(a=>tagClass(a.type)==='decision').length;
     const pending = (m.pendingMatters||[]).length;
+    const status = (m.confirmation && m.confirmation.status) || 'Draft';
+    const statusTagClass = status==='Confirmed' ? 'decision' : (status==='Circulated' ? 'discussion' : 'noted');
     return `<div style="border:1px solid var(--border);padding:12px;margin-bottom:10px;">
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         <div>
-          <strong>${escapeHtml(m.details.title||'(untitled)')}</strong> — ${escapeHtml(m.details.type||'')}<br>
+          <strong>${escapeHtml(m.details.title||'(untitled)')}</strong> — ${escapeHtml(m.details.type||'')} <span class="tag ${statusTagClass}">${escapeHtml(status)}</span><br>
           <span style="color:var(--muted);font-size:.85rem;">${escapeHtml(m.details.date||'')} · Chair: ${escapeHtml(m.details.chair||'—')} · ${(m.agendaItems||[]).length} agenda items · ${decisions} decisions · ${(m.actionPoints||[]).length} actions · ${pending} pending</span>
         </div>
         <div class="rowtools">
@@ -1043,6 +1228,72 @@ function updateTrackerStatus(meetingId, idx, value){
   renderTracker();
 }
 
+/* ---------- insights ---------- */
+function barRow(label, count, max){
+  const pct = max>0 ? Math.round((count/max)*100) : 0;
+  return `<div class="barrow"><div class="lbl" title="${escapeHtml(label)}">${escapeHtml(label)}</div><div class="track"><div class="fill" style="width:${pct}%;"></div></div><div class="val">${count}</div></div>`;
+}
+function renderInsights(){
+  const meetings = DB.meetings;
+  const allActions = [];
+  meetings.forEach(m=>(m.actionPoints||[]).forEach(a=>allActions.push(a)));
+  const completed = allActions.filter(a=>a.status==='Completed'||a.status==='Closed').length;
+  const overdue = allActions.filter(a=>isOverdue(a)).length;
+
+  document.getElementById('insightStats').innerHTML = `
+    <div class="stat"><div class="num">${meetings.length}</div><div class="lbl">Meetings on record</div></div>
+    <div class="stat"><div class="num">${allActions.length}</div><div class="lbl">Total action points</div></div>
+    <div class="stat"><div class="num">${allActions.length?Math.round(completed/allActions.length*100):0}%</div><div class="lbl">Completion rate</div></div>
+    <div class="stat"><div class="num">${overdue}</div><div class="lbl">Currently overdue</div></div>`;
+
+  if(!meetings.length){
+    ['insightMeetingsByMonth','insightCompletion','insightTopOwners','insightTypes'].forEach(id=>{
+      document.getElementById(id).innerHTML = '<p class="caption">No meetings recorded yet.</p>';
+    });
+    return;
+  }
+
+  // meetings by month (last 6 months with data, chronological)
+  const byMonth = {};
+  meetings.forEach(m=>{
+    const d = m.details.date;
+    if(!d) return;
+    const key = d.slice(0,7);
+    byMonth[key] = (byMonth[key]||0)+1;
+  });
+  const monthKeys = Object.keys(byMonth).sort().slice(-8);
+  const maxMonth = Math.max(1, ...monthKeys.map(k=>byMonth[k]));
+  document.getElementById('insightMeetingsByMonth').innerHTML = monthKeys.length
+    ? monthKeys.map(k=>barRow(k, byMonth[k], maxMonth)).join('')
+    : '<p class="caption">No dated meetings yet.</p>';
+
+  // completion by status
+  const statuses = ['Open','In Progress','Completed','Deferred','Closed','Pending clarification'];
+  const maxStatus = Math.max(1, ...statuses.map(s=>allActions.filter(a=>a.status===s).length));
+  document.getElementById('insightCompletion').innerHTML = allActions.length
+    ? statuses.map(s=>barRow(s, allActions.filter(a=>a.status===s).length, maxStatus)).join('')
+    : '<p class="caption">No action points recorded yet.</p>';
+
+  // top owners by open action count
+  const openByOwner = {};
+  allActions.filter(a=>a.status!=='Completed'&&a.status!=='Closed').forEach(a=>{
+    const who = (a.responsible||'Not specified').trim() || 'Not specified';
+    openByOwner[who] = (openByOwner[who]||0)+1;
+  });
+  const topOwners = Object.entries(openByOwner).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const maxOwner = Math.max(1, ...topOwners.map(o=>o[1]));
+  document.getElementById('insightTopOwners').innerHTML = topOwners.length
+    ? topOwners.map(([name,count])=>barRow(name, count, maxOwner)).join('')
+    : '<p class="caption">No open action points yet.</p>';
+
+  // meeting types
+  const byType = {};
+  meetings.forEach(m=>{ const t=m.details.type||'General Meeting'; byType[t]=(byType[t]||0)+1; });
+  const maxType = Math.max(1, ...Object.values(byType));
+  document.getElementById('insightTypes').innerHTML = Object.entries(byType)
+    .sort((a,b)=>b[1]-a[1]).map(([t,c])=>barRow(t,c,maxType)).join('');
+}
+
 /* ---------- export: Word (HTML-compatible .doc) ---------- */
 function groupedProceedingsHTML(items){
   const order = [];
@@ -1055,6 +1306,8 @@ function groupedProceedingsHTML(items){
 function buildMinutesHTML(){
   const d = draft.details;
   const decisions = (draft.agendaItems||[]).filter(a=>tagClass(a.type)==='decision');
+  const q = draft.quorum;
+  const conf = draft.confirmation || {status:'Draft'};
   return `
   <h1 style="font-family:Georgia,serif;">${escapeHtml(d.org||'')}</h1>
   <h2 style="font-family:Georgia,serif;">Minutes of ${escapeHtml(d.title||d.type||'Meeting')}</h2>
@@ -1063,6 +1316,8 @@ function buildMinutesHTML(){
   <p><b>Present:</b> ${escapeHtml(d.present)}</p>
   <p><b>Absent:</b> ${escapeHtml(d.absent)}</p>
   <p><b>Special invitees:</b> ${escapeHtml(d.invitees)}</p>
+  ${q && q.required!==null ? `<p><b>Quorum:</b> ${q.met?'Met':'NOT MET'} (${q.presentCount} present, ${q.required} required${q.total?' of '+q.total+' total members':''})</p>` : ''}
+  ${draft.shgMode && draft.shg ? `<p><b>SHG/VO/CLF:</b> ${escapeHtml(draft.shg.name)} (${escapeHtml(draft.shg.level)}) &nbsp; <b>Savings:</b> ${escapeHtml(draft.shg.savings)} &nbsp; <b>Loans disbursed:</b> ${escapeHtml(draft.shg.loans)}<br><b>Recovery/NPA:</b> ${escapeHtml(draft.shg.npa)} &nbsp; <b>CRP/Vitta Sakhi:</b> ${escapeHtml(draft.shg.crp)} &nbsp; <b>Bank linkage:</b> ${escapeHtml(draft.shg.bankLinkage)}</p>` : ''}
   <h3>Executive summary</h3><p>${escapeHtml(draft.executiveSummary)}</p>
   <h3>Proceedings</h3>
   ${draft.boardMode ? (draft.agendaItems||[]).map((a,i)=>`
@@ -1086,6 +1341,7 @@ function buildMinutesHTML(){
   <h3>Pending / deferred matters</h3>
   <ul>${(draft.pendingMatters||[]).map(p=>`<li>${escapeHtml(p)}</li>`).join('') || '<li>None.</li>'}</ul>
   <p style="margin-top:30px;">Prepared by: ${escapeHtml(d.secretary)} &nbsp;&nbsp;&nbsp; Reviewed/Approved by: ${escapeHtml(d.chair)}</p>
+  <p><b>Status:</b> ${conf.status==='Confirmed' ? `Confirmed${conf.date?' on '+escapeHtml(conf.date):''}${conf.ref?' — '+escapeHtml(conf.ref):''}` : (conf.status==='Circulated' ? 'Circulated — pending confirmation in the next meeting' : 'Draft — subject to confirmation in the next meeting')}</p>
   <p style="color:#888;font-size:11px;">Developed by Anil Sharma, Former General Manager, Central Bank of India.</p>`;
 }
 function exportWord(){
@@ -1118,11 +1374,22 @@ function exportExcel(){
   syncDraftFromForm();
   const d = draft.details;
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+  const detailRows = [
     ['Organisation', d.org], ['Title', d.title], ['Type', d.type], ['Date', d.date],
     ['Start', d.start], ['End', d.end], ['Venue', d.venue], ['Chairperson', d.chair],
     ['Secretary', d.secretary], ['Agenda', d.agenda]
-  ]), 'Meeting Details');
+  ];
+  if(draft.quorum && draft.quorum.required!==null){
+    detailRows.push(['Quorum required', draft.quorum.requiredRaw], ['Present count', draft.quorum.presentCount], ['Quorum met', draft.quorum.met?'Yes':'No']);
+  }
+  if(draft.shgMode && draft.shg){
+    detailRows.push(['SHG/VO/CLF name', draft.shg.name], ['Level', draft.shg.level], ['Savings collected', draft.shg.savings],
+      ['Loans disbursed', draft.shg.loans], ['Recovery/NPA', draft.shg.npa], ['CRP/Vitta Sakhi', draft.shg.crp], ['Bank linkage', draft.shg.bankLinkage]);
+  }
+  if(draft.confirmation){
+    detailRows.push(['Minutes status', draft.confirmation.status], ['Confirmed date', draft.confirmation.date||''], ['Confirmed ref', draft.confirmation.ref||'']);
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailRows), 'Meeting Details');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
     ['Present', d.present], ['Absent', d.absent], ['Special Invitees', d.invitees]
   ]), 'Attendance');
