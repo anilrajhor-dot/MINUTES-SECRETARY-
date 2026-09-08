@@ -114,6 +114,16 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
 
 <main>
 
+<div id="recoveryBanner" class="hidden" style="max-width:920px;margin:16px auto 0;">
+  <div class="msg" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+    <span>An unsaved draft from a previous session was found.</span>
+    <span class="rowtools">
+      <button class="btn small secondary" onclick="restoreAutosave()">Restore it</button>
+      <button class="btn small outline" onclick="discardAutosave()">Discard</button>
+    </span>
+  </div>
+</div>
+
 <!-- ============ HOME ============ -->
 <section id="screen-home">
   <div class="hero">
@@ -419,14 +429,57 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
 <footer>Developed by Anil Sharma, Former General Manager, Central Bank of India.</footer>
 
 <script>
-/* ---------- state & storage ---------- */
-let DB = { meetings: JSON.parse(localStorage.getItem('mb_meetings')||'[]') };
-let SETTINGS = JSON.parse(localStorage.getItem('mb_settings')||'{}');
-let draft = null; // current in-progress meeting object
+/* ---------- safe storage helpers ---------- */
+function safeParse(raw, fallback){
+  if(!raw) return fallback;
+  try{ const v = JSON.parse(raw); return (v===null||v===undefined) ? fallback : v; }
+  catch(e){ console.warn('Corrupted stored data, resetting.', e); return fallback; }
+}
+function safeSetItem(key, value){
+  try{ localStorage.setItem(key, value); return true; }
+  catch(e){
+    console.error('localStorage write failed', e);
+    const msg = (e && e.name==='QuotaExceededError')
+      ? 'Storage is full on this device — delete some old meetings or recordings, then try saving again.'
+      : 'Could not save to this browser\'s storage. Your changes are still on screen, but won\'t survive a refresh until this is resolved.';
+    showToast(msg, 'error');
+    return false;
+  }
+}
+function showToast(msg, kind){
+  let el = document.getElementById('globalToast');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'globalToast';
+    el.style = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:9999;max-width:90%;';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `<div class="msg ${kind==='error'?'error':'ok'}" style="box-shadow:0 2px 10px rgba(0,0,0,.15);">${escapeHtml(msg)}</div>`;
+  clearTimeout(el._t);
+  el._t = setTimeout(()=>{ el.innerHTML=''; }, 6000);
+}
 
-function persistMeetings(){ localStorage.setItem('mb_meetings', JSON.stringify(DB.meetings)); }
-function persistSettings(){ localStorage.setItem('mb_settings', JSON.stringify(SETTINGS)); }
+/* ---------- state & storage ---------- */
+let DB = { meetings: safeParse(localStorage.getItem('mb_meetings'), []) };
+if(!Array.isArray(DB.meetings)) DB.meetings = [];
+let SETTINGS = safeParse(localStorage.getItem('mb_settings'), {});
+let draft = null; // current in-progress meeting object
+let unsavedChanges = false;
+
+function persistMeetings(){ return safeSetItem('mb_meetings', JSON.stringify(DB.meetings)); }
+function persistSettings(){ return safeSetItem('mb_settings', JSON.stringify(SETTINGS)); }
 function uid(){ return 'm_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); }
+
+window.addEventListener('beforeunload', function(e){
+  if(unsavedChanges){ e.preventDefault(); e.returnValue=''; return ''; }
+});
+window.addEventListener('error', function(e){
+  console.error('Unhandled error:', e.error||e.message);
+});
+window.addEventListener('unhandledrejection', function(e){
+  console.error('Unhandled promise rejection:', e.reason);
+  showToast('Something went wrong: '+((e.reason&&e.reason.message)||'unexpected error'), 'error');
+});
 
 /* ---------- navigation ---------- */
 function showScreen(name){
@@ -438,7 +491,7 @@ function showScreen(name){
   if(name==='library') renderLibrary();
   if(name==='tracker') renderTracker();
   if(name==='settings') loadSettingsForm();
-  if(name==='record'){ switchRecordTab('live'); renderRecordingsList(); }
+  if(name==='record'){ switchRecordTab('live'); renderRecordingsList(); checkRecordingSupport(); }
 }
 
 function startNew(mode){
@@ -522,43 +575,76 @@ function extractPuterText(res){
 
 /* ---------- Claude / AI API ---------- */
 async function callClaude(system, userText, maxTokens){
+  if(navigator.onLine === false){
+    throw new Error('No internet connection detected. Recordings and typed notes are safe, but generating minutes needs to be online.');
+  }
   if((SETTINGS.provider||'anthropic') === 'puter'){
-    await loadPuter();
-    const model = SETTINGS.puterModel || 'claude-sonnet-4-6';
-    const messages = [{role:'system', content: system}, {role:'user', content: userText}];
-    const res = await puter.ai.chat(messages, false, {model, max_tokens: maxTokens||4000});
+    let res;
+    try{
+      await loadPuter();
+      const model = SETTINGS.puterModel || 'claude-sonnet-4-6';
+      const messages = [{role:'system', content: system}, {role:'user', content: userText}];
+      res = await puter.ai.chat(messages, false, {model, max_tokens: maxTokens||4000});
+    }catch(err){
+      throw new Error('Free provider error: '+(err && err.message ? err.message : 'the request failed — try again, or switch model/provider in Settings.'));
+    }
     const text = extractPuterText(res);
     if(!text) throw new Error('No response text from the free provider — try again, or switch model in Settings.');
     return text;
   }
   if(!SETTINGS.apiKey){ throw new Error('Add your Anthropic API key in Settings first — or switch to the free provider in Settings.'); }
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method:'POST',
-    headers:{
-      'Content-Type':'application/json',
-      'x-api-key': SETTINGS.apiKey,
-      'anthropic-version':'2023-06-01',
-      'anthropic-dangerous-direct-browser-access':'true'
-    },
-    body: JSON.stringify({
-      model: SETTINGS.model || 'claude-sonnet-4-5',
-      max_tokens: maxTokens || 4000,
-      system: system,
-      messages:[{role:'user', content:userText}]
-    })
-  });
-  if(!res.ok){
-    const t = await res.text();
-    throw new Error('API error ('+res.status+'): '+t.slice(0,300));
+  let res;
+  try{
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key': SETTINGS.apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({
+        model: SETTINGS.model || 'claude-sonnet-4-5',
+        max_tokens: maxTokens || 4000,
+        system: system,
+        messages:[{role:'user', content:userText}]
+      })
+    });
+  }catch(networkErr){
+    throw new Error('Could not reach Anthropic — check your internet connection and try again.');
   }
-  const data = await res.json();
+  if(!res.ok){
+    let detail = '';
+    try{ detail = (await res.text()).slice(0,300); }catch(e){}
+    const friendly = {
+      401: 'Your API key was rejected — check it in Settings.',
+      403: 'Access denied by Anthropic for this key/request.',
+      429: 'Rate limited — you\'re sending requests too fast, or you\'re out of quota. Wait a moment and try again.',
+      529: 'Anthropic\'s servers are temporarily overloaded — try again shortly.'
+    }[res.status] || ('API error ('+res.status+')');
+    throw new Error(friendly + (detail ? ': '+detail : ''));
+  }
+  let data;
+  try{ data = await res.json(); }
+  catch(e){ throw new Error('Received an unreadable response from the API. Please try again.'); }
   const textBlock = (data.content||[]).find(b=>b.type==='text');
   if(!textBlock) throw new Error('No text in response.');
   return textBlock.text;
 }
 function parseJSON(text){
-  let t = text.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
-  return JSON.parse(t);
+  let t = (text||'').trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+  try{
+    return JSON.parse(t);
+  }catch(e1){
+    // salvage: the model sometimes adds stray commentary before/after the JSON object
+    const start = t.indexOf('{'), end = t.lastIndexOf('}');
+    if(start>=0 && end>start){
+      try{ return JSON.parse(t.slice(start, end+1)); }catch(e2){ /* fall through */ }
+    }
+    const err = new Error('The AI returned a response this app could not read. This can happen occasionally — please try again.');
+    err.raw = text;
+    throw err;
+  }
 }
 
 const ACCURACY_RULES = `You are an AI meeting secretary preparing formal minutes for Indian organisational/board meetings.
@@ -631,14 +717,16 @@ Return JSON with this exact shape:
     draft = {
       id: uid(), createdAt: new Date().toISOString(), details,
       boardMode,
-      agendaItems: parsed1.agendaItems||[],
-      pendingMatters: parsed1.pendingMatters||[],
-      actionPoints: (parsed2.actionPoints||[]).map(a=>({...a, status:a.status||'Open'})),
+      agendaItems: normalizeAgendaItems(parsed1.agendaItems),
+      pendingMatters: Array.isArray(parsed1.pendingMatters) ? parsed1.pendingMatters.filter(Boolean) : [],
+      actionPoints: normalizeActionPoints(parsed2.actionPoints),
       executiveSummary: parsed2.executiveSummary||'',
       oneMinuteSummary: parsed2.oneMinuteSummary||'',
       rawInput: input,
       qaHistory: []
     };
+    unsavedChanges = true;
+    doAutosave();
     msg.innerHTML = '<div class="msg ok">Draft ready. Opening review screen…</div>';
     setTimeout(()=>showScreen('review'), 400);
   }catch(err){
@@ -648,6 +736,34 @@ Return JSON with this exact shape:
   }
 }
 function val(id){ return document.getElementById(id).value.trim(); }
+function normalizeAgendaItems(items){
+  if(!Array.isArray(items)) return [];
+  return items.map(it=>({
+    heading: it && it.heading ? String(it.heading) : '(untitled agenda item)',
+    category: it && it.category ? String(it.category) : '',
+    discussion: it && it.discussion ? String(it.discussion) : '',
+    type: it && it.type ? String(it.type) : 'Discussion',
+    decisionText: it && it.decisionText ? String(it.decisionText) : 'No specific decision recorded',
+    responsibility: it && it.responsibility ? String(it.responsibility) : '',
+    timeline: it && it.timeline ? String(it.timeline) : '',
+    ambiguous: !!(it && it.ambiguous),
+    ambiguityNote: it && it.ambiguityNote ? String(it.ambiguityNote) : ''
+  }));
+}
+function normalizeActionPoints(points){
+  if(!Array.isArray(points)) return [];
+  const validStatus = ['Open','In Progress','Completed','Deferred','Closed','Pending clarification'];
+  const validPriority = ['High','Medium','Low'];
+  return points.map(a=>({
+    subject: a && a.subject ? String(a.subject) : '',
+    action: a && a.action ? String(a.action) : '',
+    responsible: a && a.responsible ? String(a.responsible) : 'Not specified',
+    deadline: a && a.deadline ? String(a.deadline) : 'Not specified',
+    priority: (a && validPriority.includes(a.priority)) ? a.priority : 'Medium',
+    status: (a && validStatus.includes(a.status)) ? a.status : 'Open',
+    remarks: a && a.remarks ? String(a.remarks) : ''
+  }));
+}
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ---------- review screen render ---------- */
@@ -788,8 +904,11 @@ function saveMeeting(){
   syncDraftFromForm();
   const idx = DB.meetings.findIndex(m=>m.id===draft.id);
   if(idx>=0) DB.meetings[idx] = draft; else DB.meetings.push(draft);
-  persistMeetings();
-  document.getElementById('saveMsg').innerHTML = '<div class="msg ok">Meeting saved to the library.</div>';
+  const ok = persistMeetings();
+  document.getElementById('saveMsg').innerHTML = ok
+    ? '<div class="msg ok">Meeting saved to the library.</div>'
+    : '<div class="msg error">Could not save — see the message at the bottom of the screen.</div>';
+  if(ok){ unsavedChanges = false; clearAutosave(); }
 }
 function deleteTranscriptForDraft(){
   if(!confirm('Delete the source transcript/notes for this meeting? The generated minutes, decisions and action points will be kept — only the original raw text is removed.')) return;
@@ -803,6 +922,8 @@ function deleteMeetingFromReview(){
   DB.meetings = DB.meetings.filter(m=>m.id!==draft.id);
   persistMeetings();
   draft = null;
+  unsavedChanges = false;
+  clearAutosave();
   showScreen('library');
 }
 
@@ -833,6 +954,8 @@ function isOverdue(a){
 }
 function openMeeting(id){
   draft = DB.meetings.find(m=>m.id===id);
+  if(!draft){ showToast('That meeting could not be found — it may have been deleted.', 'error'); showScreen('library'); return; }
+  unsavedChanges = false;
   showScreen('review');
 }
 
@@ -966,11 +1089,13 @@ function buildMinutesHTML(){
   <p style="color:#888;font-size:11px;">Developed by Anil Sharma, Former General Manager, Central Bank of India.</p>`;
 }
 function exportWord(){
-  syncDraftFromForm();
-  const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-  <head><meta charset="utf-8"><title>Minutes</title></head><body>${buildMinutesHTML()}</body></html>`;
-  const blob = new Blob(['\ufeff', html], {type:'application/msword'});
-  downloadBlob(blob, (draft.details.title||'minutes').replace(/[^\w-]+/g,'_')+'.doc');
+  try{
+    syncDraftFromForm();
+    const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head><meta charset="utf-8"><title>Minutes</title></head><body>${buildMinutesHTML()}</body></html>`;
+    const blob = new Blob(['\ufeff', html], {type:'application/msword'});
+    downloadBlob(blob, (draft.details.title||'minutes').replace(/[^\w-]+/g,'_')+'.doc');
+  }catch(e){ showToast('Word export failed: '+e.message, 'error'); }
 }
 function downloadBlob(blob, filename){
   const url = URL.createObjectURL(blob);
@@ -978,9 +1103,18 @@ function downloadBlob(blob, filename){
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
+function xlsxReady(){
+  if(typeof XLSX === 'undefined'){
+    showToast('The Excel export library failed to load (needs an internet connection the first time) — try again once online, or use Word/PDF export instead.', 'error');
+    return false;
+  }
+  return true;
+}
 
 /* ---------- export: Excel ---------- */
 function exportExcel(){
+  if(!xlsxReady()) return;
+  try{
   syncDraftFromForm();
   const d = draft.details;
   const wb = XLSX.utils.book_new();
@@ -1015,15 +1149,19 @@ function exportExcel(){
     ...(draft.actionPoints||[]).map((a,i)=>[i+1,a.subject,a.action,a.responsible,a.deadline,a.status])
   ]), 'Follow-up Tracker');
   XLSX.writeFile(wb, (d.title||'minutes').replace(/[^\w-]+/g,'_')+'.xlsx');
+  }catch(e){ showToast('Excel export failed: '+e.message, 'error'); }
 }
 function exportTracker(){
-  const rows = [['Meeting','Subject','Action','Responsible','Deadline','Priority','Status','Remarks']];
-  DB.meetings.forEach(m=>(m.actionPoints||[]).forEach(a=>{
-    rows.push([m.details.title||'', a.subject, a.action, a.responsible, a.deadline, a.priority, a.status, a.remarks]);
-  }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Action Tracker');
-  XLSX.writeFile(wb, 'action_point_tracker.xlsx');
+  if(!xlsxReady()) return;
+  try{
+    const rows = [['Meeting','Subject','Action','Responsible','Deadline','Priority','Status','Remarks']];
+    DB.meetings.forEach(m=>(m.actionPoints||[]).forEach(a=>{
+      rows.push([m.details.title||'', a.subject, a.action, a.responsible, a.deadline, a.priority, a.status, a.remarks]);
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Action Tracker');
+    XLSX.writeFile(wb, 'action_point_tracker.xlsx');
+  }catch(e){ showToast('Excel export failed: '+e.message, 'error'); }
 }
 
 /* ---------- copy / share ---------- */
@@ -1049,36 +1187,70 @@ function shareMinutes(){
 
 /* ================= RECORDING (IndexedDB + MediaRecorder + Web Speech API) ================= */
 let idb = null;
+let idbFailed = false;
+let memoryRecordings = []; // fallback store if IndexedDB is unavailable (e.g. private browsing)
 function openRecDB(){
   return new Promise((resolve,reject)=>{
-    const req = indexedDB.open('mb_recordings', 1);
-    req.onupgradeneeded = ()=>{ req.result.createObjectStore('recordings', {keyPath:'id'}); };
-    req.onsuccess = ()=>resolve(req.result);
-    req.onerror = ()=>reject(req.error);
+    if(!window.indexedDB){ reject(new Error('IndexedDB unavailable')); return; }
+    try{
+      const req = indexedDB.open('mb_recordings', 1);
+      req.onupgradeneeded = ()=>{ req.result.createObjectStore('recordings', {keyPath:'id'}); };
+      req.onsuccess = ()=>resolve(req.result);
+      req.onerror = ()=>reject(req.error||new Error('IndexedDB open failed'));
+    }catch(e){ reject(e); }
   });
 }
+async function ensureDB(){
+  if(idbFailed) return null;
+  if(idb) return idb;
+  try{
+    idb = await openRecDB();
+    return idb;
+  }catch(e){
+    idbFailed = true;
+    console.warn('IndexedDB unavailable, using in-memory recordings store for this session only.', e);
+    showToast('This browser is blocking persistent storage for recordings (common in private browsing) — recordings will only last for this session.', 'error');
+    return null;
+  }
+}
 async function dbPut(rec){
-  idb = idb || await openRecDB();
-  return new Promise((resolve,reject)=>{
-    const tx = idb.transaction('recordings','readwrite');
-    tx.objectStore('recordings').put(rec);
-    tx.oncomplete = ()=>resolve(); tx.onerror = ()=>reject(tx.error);
+  const db = await ensureDB();
+  if(!db){
+    const i = memoryRecordings.findIndex(r=>r.id===rec.id);
+    if(i>=0) memoryRecordings[i]=rec; else memoryRecordings.push(rec);
+    return;
+  }
+  return new Promise((resolve)=>{
+    try{
+      const tx = db.transaction('recordings','readwrite');
+      tx.objectStore('recordings').put(rec);
+      tx.oncomplete = ()=>resolve();
+      tx.onerror = ()=>{ console.error(tx.error); showToast('Could not save the recording to storage.', 'error'); resolve(); };
+    }catch(e){ console.error(e); resolve(); }
   });
 }
 async function dbGetAll(){
-  idb = idb || await openRecDB();
-  return new Promise((resolve,reject)=>{
-    const tx = idb.transaction('recordings','readonly');
-    const req = tx.objectStore('recordings').getAll();
-    req.onsuccess = ()=>resolve(req.result); req.onerror = ()=>reject(req.error);
+  const db = await ensureDB();
+  if(!db) return memoryRecordings.slice();
+  return new Promise((resolve)=>{
+    try{
+      const tx = db.transaction('recordings','readonly');
+      const req = tx.objectStore('recordings').getAll();
+      req.onsuccess = ()=>resolve(req.result||[]);
+      req.onerror = ()=>{ console.error(req.error); resolve([]); };
+    }catch(e){ console.error(e); resolve([]); }
   });
 }
 async function dbDelete(id){
-  idb = idb || await openRecDB();
-  return new Promise((resolve,reject)=>{
-    const tx = idb.transaction('recordings','readwrite');
-    tx.objectStore('recordings').delete(id);
-    tx.oncomplete = ()=>resolve(); tx.onerror = ()=>reject(tx.error);
+  const db = await ensureDB();
+  if(!db){ memoryRecordings = memoryRecordings.filter(r=>r.id!==id); return; }
+  return new Promise((resolve)=>{
+    try{
+      const tx = db.transaction('recordings','readwrite');
+      tx.objectStore('recordings').delete(id);
+      tx.oncomplete = ()=>resolve();
+      tx.onerror = ()=>{ console.error(tx.error); resolve(); };
+    }catch(e){ console.error(e); resolve(); }
   });
 }
 
@@ -1096,12 +1268,19 @@ async function startRecording(){
   try{
     recStream = await navigator.mediaDevices.getUserMedia({audio:true});
   }catch(e){
-    document.getElementById('recStatus').innerHTML = '<div class="msg error">Microphone access denied or unavailable.</div>';
+    document.getElementById('recStatus').innerHTML = '<div class="msg error">Microphone access denied or unavailable. Check your browser/OS permissions, or use "Upload a file instead."</div>';
     return;
   }
   mediaChunks = [];
-  mediaRecorder = new MediaRecorder(recStream);
+  try{
+    mediaRecorder = new MediaRecorder(recStream);
+  }catch(e){
+    recStream.getTracks().forEach(t=>t.stop());
+    document.getElementById('recStatus').innerHTML = '<div class="msg error">This browser could not start audio recording. Use "Upload a file instead," or paste a transcript directly.</div>';
+    return;
+  }
   mediaRecorder.ondataavailable = e=>{ if(e.data.size>0) mediaChunks.push(e.data); };
+  mediaRecorder.onerror = (e)=>{ console.error('MediaRecorder error', e); showToast('A recording error occurred — the audio captured so far is still safe.', 'error'); };
   mediaRecorder.start();
 
   recSeconds = 0;
@@ -1145,21 +1324,29 @@ function resumeRecording(){
   document.getElementById('recPauseBtn').classList.remove('hidden');
 }
 async function stopRecording(){
+  if(!mediaRecorder){ return; }
   clearInterval(recTimerInterval);
-  if(recognizer){ recognizer.onend=null; recognizer.stop(); }
-  if(mediaRecorder && mediaRecorder.state!=='inactive'){
-    await new Promise(resolve=>{ mediaRecorder.onstop = resolve; mediaRecorder.stop(); });
-  }
+  try{ if(recognizer){ recognizer.onend=null; recognizer.stop(); } }catch(e){}
+  try{
+    if(mediaRecorder.state!=='inactive'){
+      await new Promise(resolve=>{ mediaRecorder.onstop = resolve; mediaRecorder.stop(); });
+    }
+  }catch(e){ console.error('Error stopping recorder', e); }
   if(recStream) recStream.getTracks().forEach(t=>t.stop());
-  const blob = new Blob(mediaChunks, {type:'audio/webm'});
-  const name = document.getElementById('recName').value.trim() || ('Recording '+new Date().toLocaleString());
-  const rec = {id: uid(), name, createdAt: new Date().toISOString(), durationSec: recSeconds, blob, transcript: document.getElementById('recTranscript').value, type:'live'};
-  await dbPut(rec);
+  if(!mediaChunks.length){
+    document.getElementById('recStatus').innerHTML = '<div class="msg error">No audio was captured — please try recording again.</div>';
+  }else{
+    const blob = new Blob(mediaChunks, {type:'audio/webm'});
+    const name = document.getElementById('recName').value.trim() || ('Recording '+new Date().toLocaleString());
+    const rec = {id: uid(), name, createdAt: new Date().toISOString(), durationSec: recSeconds, blob, transcript: document.getElementById('recTranscript').value, type:'live'};
+    await dbPut(rec);
+    document.getElementById('recStatus').innerHTML = '<div class="msg ok">Saved to your recordings library.</div>';
+  }
   document.getElementById('recStartBtn').classList.remove('hidden');
   document.getElementById('recPauseBtn').classList.add('hidden');
   document.getElementById('recResumeBtn').classList.add('hidden');
   document.getElementById('recStopBtn').classList.add('hidden');
-  document.getElementById('recStatus').innerHTML = '<div class="msg ok">Saved to your recordings library.</div>';
+  mediaRecorder = null;
   renderRecordingsList();
 }
 function useTranscriptInNewMeeting(){
@@ -1373,10 +1560,72 @@ async function askAboutMeeting(){
 
 /* ---------- init ---------- */
 function renderAll(){ renderHome(); }
+
+/* autosave: protects in-progress notes and drafts against a closed tab/crash */
+let autosaveTimer = null;
+function scheduleAutosave(){
+  unsavedChanges = true;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(doAutosave, 1200);
+}
+function doAutosave(){
+  try{
+    const newInput = document.getElementById('mInput');
+    const payload = {
+      savedAt: new Date().toISOString(),
+      draft: draft,
+      newMeetingInput: newInput ? newInput.value : ''
+    };
+    if(draft || (payload.newMeetingInput||'').trim()){
+      safeSetItem('mb_autosave', JSON.stringify(payload));
+    }
+  }catch(e){ console.warn('Autosave failed', e); }
+}
+function clearAutosave(){ try{ localStorage.removeItem('mb_autosave'); }catch(e){} }
+function restoreAutosave(){
+  const payload = safeParse(localStorage.getItem('mb_autosave'), null);
+  document.getElementById('recoveryBanner').classList.add('hidden');
+  if(!payload) return;
+  if(payload.draft){
+    draft = payload.draft;
+    showScreen('review');
+  }else if(payload.newMeetingInput){
+    showScreen('new');
+    document.getElementById('mInput').value = payload.newMeetingInput;
+  }
+  unsavedChanges = true;
+}
+function discardAutosave(){
+  clearAutosave();
+  document.getElementById('recoveryBanner').classList.add('hidden');
+}
+
+/* feature detection so buttons fail gracefully instead of throwing mid-action */
+function checkRecordingSupport(){
+  const hasMic = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  const startBtn = document.getElementById('recStartBtn');
+  if(!hasMic && startBtn && !startBtn.dataset.warned){
+    startBtn.dataset.warned = '1';
+    startBtn.disabled = true;
+    document.getElementById('recStatus').innerHTML = '<div class="msg error">This browser does not support in-browser microphone recording. Use "Upload a file instead," or paste a transcript directly.</div>';
+  }
+}
+
 window.onload = function(){
   if(SETTINGS.org) document.getElementById('orgNameDisplay').textContent = SETTINGS.org;
   renderHome();
   if(window.speechSynthesis) speechSynthesis.onvoiceschanged = populateVoiceList;
+
+  // autosave hooks (event delegation — survives dynamically-rendered fields)
+  document.addEventListener('input', (e)=>{
+    if(e.target.closest('#screen-new') || e.target.closest('#screen-review')) scheduleAutosave();
+  });
+
+  // offer to restore an interrupted draft
+  const auto = safeParse(localStorage.getItem('mb_autosave'), null);
+  if(auto && (auto.draft || (auto.newMeetingInput||'').trim())){
+    document.getElementById('recoveryBanner').classList.remove('hidden');
+  }
 };
 </script>
 </body>
