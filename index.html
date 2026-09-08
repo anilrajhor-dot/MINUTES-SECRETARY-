@@ -207,6 +207,7 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     <div id="recLivePanel">
       <h2>Record meeting</h2>
       <div class="caption">Live transcription uses your browser's built-in speech recognition. Works well in Chrome (desktop &amp; Android); support on iPhone Safari is limited — if it doesn't transcribe, the audio is still recorded and you can type/paste the notes afterwards.</div>
+      <div class="caption">Keep this screen open and the device unlocked while recording — most mobile browsers pause or stop recording once the screen locks or the app is minimised, so the last portion could be lost.</div>
       <div style="font-family:var(--serif);font-size:2rem;margin:10px 0;" id="recTimer">00:00</div>
       <div class="rowtools" style="margin-bottom:14px;">
         <button class="btn" id="recStartBtn" onclick="startRecording()">● Start</button>
@@ -315,6 +316,10 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
         <button class="btn secondary" onclick="window.print()">Export / Print PDF</button>
         <button class="btn outline" onclick="copyPlainText()">Copy to clipboard</button>
         <button class="btn outline" onclick="shareMinutes()">Share</button>
+      </div>
+      <div class="actions-toolbar">
+        <button class="btn outline" onclick="deleteTranscriptForDraft()">Delete transcript</button>
+        <button class="btn outline" onclick="deleteMeetingFromReview()">Delete meeting</button>
       </div>
       <div id="saveMsg"></div>
     </div>
@@ -501,12 +506,12 @@ Meeting notes / transcript:
 """
 ${input}
 """
-${boardMode ? `This is a Board Meeting: use formal corporate/Board language such as "After due deliberation, the Board noted...", "The Board considered the matter and approved...", "The Board advised that...", "The Board directed the Management to..." — but only where the source material actually supports approval/direction/resolution wording. Where it is genuinely unclear whether a matter was approved or merely discussed, set "ambiguous": true and explain why in "ambiguityNote".` : ''}
+${boardMode ? `This is a Board Meeting: use formal corporate/Board language such as "After due deliberation, the Board noted...", "The Board considered the matter and approved...", "The Board advised that...", "The Board directed the Management to..." — but only where the source material actually supports approval/direction/resolution wording. Where it is genuinely unclear whether a matter was approved or merely discussed, set "ambiguous": true and explain why in "ambiguityNote".` : `This is a ${details.type}: organise each agenda item under one of these categories where it fits naturally — Operational Issues, Business Performance, Recovery, Customer Service, HR/Staffing, Compliance, Technology, Pending Issues, Follow-up Actions — or a short custom category if none fit. Use simpler, professional (not heavily formal) language.`}
 
 Return JSON with this exact shape:
 {
  "agendaItems":[
-   {"heading":"short agenda item title","discussion":"1-3 sentence formal paraphrase of what was discussed","type":"Decision|Discussion|Approval|Resolution|Deferred|Noted","decisionText":"formal decision/resolution wording, or 'No specific decision recorded'","responsibility":"person/department directed to act, or ''","timeline":"timeline mentioned, or ''","ambiguous":false,"ambiguityNote":""}
+   {"heading":"short agenda item title","category":"${boardMode ? '' : 'one of the categories above, or a short custom one'}","discussion":"1-3 sentence formal paraphrase of what was discussed","type":"Decision|Discussion|Approval|Resolution|Deferred|Noted","decisionText":"formal decision/resolution wording, or 'No specific decision recorded'","responsibility":"person/department directed to act, or ''","timeline":"timeline mentioned, or ''","ambiguous":false,"ambiguityNote":""}
  ],
  "pendingMatters":["matter needing follow-up or further approval", "..."]
 }
@@ -574,7 +579,9 @@ function renderReview(){
 function renderAgendaList(){
   const wrap = document.getElementById('agendaList');
   wrap.innerHTML = '';
-  (draft.agendaItems||[]).forEach((item, i)=>{
+  const items = draft.agendaItems||[];
+
+  function renderCard(item, i){
     const div = document.createElement('div');
     div.style = 'border:1px solid var(--border);padding:12px;margin-bottom:10px;';
     div.innerHTML = `
@@ -583,6 +590,7 @@ function renderAgendaList(){
         <span class="tag ${tagClass(item.type)}">${escapeHtml(item.type||'Discussion')}</span>
         <button class="btn small outline" onclick="removeAgendaItem(${i})">Remove</button>
       </div>
+      ${!draft.boardMode ? `<div style="margin-top:6px;max-width:260px;"><label>Category</label><input type="text" value="${escapeHtml(item.category||'')}" placeholder="e.g. HR/Staffing" oninput="draft.agendaItems[${i}].category=this.value;renderAgendaList()"></div>` : ''}
       ${item.ambiguous ? `<div class="flag-item">Ambiguous whether approved or only discussed: ${escapeHtml(item.ambiguityNote||'')}</div>` : ''}
       <label style="margin-top:8px;">Discussion</label>
       <textarea rows="2" oninput="draft.agendaItems[${i}].discussion=this.value">${escapeHtml(item.discussion)}</textarea>
@@ -592,7 +600,23 @@ function renderAgendaList(){
         <div><label>Responsibility</label><input type="text" value="${escapeHtml(item.responsibility||'')}" oninput="draft.agendaItems[${i}].responsibility=this.value"></div>
         <div><label>Timeline</label><input type="text" value="${escapeHtml(item.timeline||'')}" oninput="draft.agendaItems[${i}].timeline=this.value"></div>
       </div>` : ''}`;
-    wrap.appendChild(div);
+    return div;
+  }
+
+  if(draft.boardMode || !items.some(it=>it.category)){
+    items.forEach((item,i)=> wrap.appendChild(renderCard(item,i)));
+    return;
+  }
+
+  // group by category, preserving first-seen order
+  const order = [];
+  items.forEach(it=>{ const c = it.category||'Uncategorised'; if(!order.includes(c)) order.push(c); });
+  order.forEach(cat=>{
+    const header = document.createElement('div');
+    header.style = 'font-weight:600;margin:16px 0 6px;color:var(--teal);';
+    header.textContent = cat;
+    wrap.appendChild(header);
+    items.forEach((item,i)=>{ if((item.category||'Uncategorised')===cat) wrap.appendChild(renderCard(item,i)); });
   });
 }
 function tagClass(t){
@@ -603,7 +627,7 @@ function tagClass(t){
   return 'discussion';
 }
 function addAgendaItem(){
-  draft.agendaItems.push({heading:'New agenda item', discussion:'', type:'Discussion', decisionText:'No specific decision recorded'});
+  draft.agendaItems.push({heading:'New agenda item', category:'', discussion:'', type:'Discussion', decisionText:'No specific decision recorded'});
   renderAgendaList();
 }
 function removeAgendaItem(i){ draft.agendaItems.splice(i,1); renderAgendaList(); }
@@ -611,10 +635,12 @@ function removeAgendaItem(i){ draft.agendaItems.splice(i,1); renderAgendaList();
 function renderActionTable(){
   const tbody = document.querySelector('#actionTable tbody');
   tbody.innerHTML = '';
+  const dupSet = computeDuplicateFlags(draft.actionPoints||[]);
   (draft.actionPoints||[]).forEach((a,i)=>{
     const tr = document.createElement('tr');
+    if(dupSet.has(i)) tr.style.borderLeft = '3px solid var(--warn)';
     tr.innerHTML = `
-      <td>${i+1}</td>
+      <td>${i+1}${dupSet.has(i)?' <span class="tag deferred" title="Looks similar to another action point">possible duplicate</span>':''}</td>
       <td><input type="text" value="${escapeHtml(a.subject)}" oninput="draft.actionPoints[${i}].subject=this.value"></td>
       <td><input type="text" value="${escapeHtml(a.action)}" oninput="draft.actionPoints[${i}].action=this.value"></td>
       <td><input type="text" value="${escapeHtml(a.responsible)}" oninput="draft.actionPoints[${i}].responsible=this.value"></td>
@@ -625,6 +651,18 @@ function renderActionTable(){
       <td><button class="btn small outline" onclick="removeActionRow(${i})">✕</button></td>`;
     tbody.appendChild(tr);
   });
+}
+function normWords(s){ return new Set((s||'').toLowerCase().replace(/[^\w\s]/g,'').split(/\s+/).filter(Boolean)); }
+function jaccard(a,b){ let inter=0; a.forEach(x=>{if(b.has(x))inter++;}); const union=new Set([...a,...b]).size; return union? inter/union : 0; }
+function computeDuplicateFlags(points){
+  const dup = new Set();
+  for(let i=0;i<points.length;i++){
+    for(let j=i+1;j<points.length;j++){
+      const a = normWords(points[i].action), b = normWords(points[j].action);
+      if(a.size>=3 && b.size>=3 && jaccard(a,b) > 0.55){ dup.add(i); dup.add(j); }
+    }
+  }
+  return dup;
 }
 function addActionRow(){
   draft.actionPoints.push({subject:'',action:'',responsible:'Not specified',deadline:'Not specified',priority:'Medium',status:'Open',remarks:''});
@@ -664,6 +702,20 @@ function saveMeeting(){
   if(idx>=0) DB.meetings[idx] = draft; else DB.meetings.push(draft);
   persistMeetings();
   document.getElementById('saveMsg').innerHTML = '<div class="msg ok">Meeting saved to the library.</div>';
+}
+function deleteTranscriptForDraft(){
+  if(!confirm('Delete the source transcript/notes for this meeting? The generated minutes, decisions and action points will be kept — only the original raw text is removed.')) return;
+  draft.rawInput = '';
+  const idx = DB.meetings.findIndex(m=>m.id===draft.id);
+  if(idx>=0){ DB.meetings[idx].rawInput = ''; persistMeetings(); }
+  document.getElementById('saveMsg').innerHTML = '<div class="msg ok">Transcript deleted. Minutes and action points are untouched.</div>';
+}
+function deleteMeetingFromReview(){
+  if(!confirm('Delete this entire meeting — minutes, action points, and transcript — permanently?')) return;
+  DB.meetings = DB.meetings.filter(m=>m.id!==draft.id);
+  persistMeetings();
+  draft = null;
+  showScreen('library');
 }
 
 /* ---------- home ---------- */
@@ -720,7 +772,8 @@ function renderLibrary(){
         </div>
         <div class="rowtools">
           <button class="btn small secondary" onclick="openMeeting('${m.id}')">Open</button>
-          <button class="btn small outline" onclick="deleteMeeting('${m.id}')">Delete</button>
+          <button class="btn small outline" onclick="deleteTranscriptOnly('${m.id}')">Delete transcript</button>
+          <button class="btn small outline" onclick="deleteMeeting('${m.id}')">Delete meeting</button>
         </div>
       </div>
     </div>`;
@@ -731,6 +784,12 @@ function deleteMeeting(id){
   DB.meetings = DB.meetings.filter(m=>m.id!==id);
   persistMeetings();
   renderLibrary(); renderHome();
+}
+function deleteTranscriptOnly(id){
+  if(!confirm('Delete the source transcript/notes for this meeting? The minutes, decisions and action points already generated will be kept.')) return;
+  const m = DB.meetings.find(mm=>mm.id===id);
+  if(m){ m.rawInput = ''; persistMeetings(); }
+  renderLibrary();
 }
 
 /* ---------- tracker ---------- */
@@ -774,6 +833,14 @@ function updateTrackerStatus(meetingId, idx, value){
 }
 
 /* ---------- export: Word (HTML-compatible .doc) ---------- */
+function groupedProceedingsHTML(items){
+  const order = [];
+  items.forEach(it=>{ const c = it.category||'Uncategorised'; if(!order.includes(c)) order.push(c); });
+  return order.map(cat=>`
+    <h4>${escapeHtml(cat)}</h4>
+    ${items.filter(a=>(a.category||'Uncategorised')===cat).map(a=>`
+      <p><b>${escapeHtml(a.heading)}</b><br>${escapeHtml(a.discussion)}<br><i>Decision:</i> ${escapeHtml(a.decisionText)}</p>`).join('')}`).join('');
+}
 function buildMinutesHTML(){
   const d = draft.details;
   const decisions = (draft.agendaItems||[]).filter(a=>tagClass(a.type)==='decision');
@@ -793,6 +860,7 @@ function buildMinutesHTML(){
     <b>DECISION/RESOLUTION:</b> ${escapeHtml(a.decisionText)}${a.ambiguous ? ' <i>(status of approval unclear from the source record)</i>' : ''}<br>
     <b>ACTION REQUIRED:</b> ${(draft.actionPoints||[]).filter(ap=>(ap.subject||'').toLowerCase().includes((a.heading||'').toLowerCase().slice(0,15))).map(ap=>escapeHtml(ap.action)).join('; ') || 'See action point register'}<br>
     <b>RESPONSIBILITY:</b> ${escapeHtml(a.responsibility||'—')} &nbsp; <b>TIMELINE:</b> ${escapeHtml(a.timeline||'—')}</p>`).join('')
+  : (draft.agendaItems||[]).some(a=>a.category) ? groupedProceedingsHTML(draft.agendaItems)
   : (draft.agendaItems||[]).map((a,i)=>`
     <p><b>${i+1}. ${escapeHtml(a.heading)}</b><br>
     ${escapeHtml(a.discussion)}<br>
@@ -837,11 +905,11 @@ function exportExcel(){
     ['Present', d.present], ['Absent', d.absent], ['Special Invitees', d.invitees]
   ]), 'Attendance');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['#','Agenda Item'], ...(draft.agendaItems||[]).map((a,i)=>[i+1,a.heading])
+    ['#','Agenda Item','Category'], ...(draft.agendaItems||[]).map((a,i)=>[i+1,a.heading,a.category||''])
   ]), 'Agenda');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['#','Heading','Discussion','Type','Decision'],
-    ...(draft.agendaItems||[]).map((a,i)=>[i+1,a.heading,a.discussion,a.type,a.decisionText])
+    ['#','Heading','Category','Discussion','Type','Decision'],
+    ...(draft.agendaItems||[]).map((a,i)=>[i+1,a.heading,a.category||'',a.discussion,a.type,a.decisionText])
   ]), 'Minutes');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
     ['Heading','Decision'],
