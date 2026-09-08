@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minute Book — AI Meeting Minutes &amp; Action-Point Secretary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{
+  --ink:#1B2A3D; --paper:#F5F6F3; --panel:#FFFFFF; --border:#D8D9D3;
+  --accent:#9C7A3C; --teal:#2F5D62; --muted:#68706B;
+  --ok:#3F7D5C; --warn:#C68A2E; --danger:#B0413E;
+  --serif:"Source Serif 4", Georgia, serif;
+  --sans:"IBM Plex Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:var(--sans);background:var(--paper);color:var(--ink);line-height:1.5;}
+h1,h2,h3,.serif{font-family:var(--serif);}
+a{color:var(--teal);}
+button{font-family:var(--sans);cursor:pointer;}
+.app-header{background:var(--ink);color:#EFEFE9;padding:18px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+.app-header .title{font-family:var(--serif);font-size:1.25rem;font-weight:600;letter-spacing:.2px;}
+.app-header .org{font-size:.82rem;color:#C9CFC7;}
+nav.tabs{display:flex;gap:2px;background:var(--panel);border-bottom:1px solid var(--border);padding:0 20px;overflow-x:auto;}
+nav.tabs button{background:none;border:none;padding:12px 16px;font-size:.92rem;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;}
+nav.tabs button.active{color:var(--ink);border-bottom-color:var(--accent);font-weight:600;}
+main{max-width:960px;margin:0 auto;padding:24px 20px 80px;}
+.section{background:var(--panel);border:1px solid var(--border);border-top:3px solid var(--ink);padding:20px 22px;margin-bottom:18px;}
+.section h2{margin:0 0 14px;font-size:1.05rem;font-weight:600;}
+.caption{font-size:.78rem;color:var(--muted);margin:-8px 0 14px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+@media(max-width:640px){.grid2,.grid3{grid-template-columns:1fr;}}
+label{display:block;font-size:.82rem;color:var(--muted);margin-bottom:4px;}
+input[type=text],input[type=date],input[type=time],input[type=password],select,textarea{
+  width:100%;padding:9px 10px;border:1px solid var(--border);background:#fff;color:var(--ink);
+  font-family:var(--sans);font-size:.92rem;
+}
+textarea{resize:vertical;min-height:90px;}
+.field{margin-bottom:14px;}
+.btn{display:inline-block;padding:10px 18px;border:1px solid var(--ink);background:var(--ink);color:#fff;font-size:.9rem;font-weight:500;}
+.btn:hover{background:#12202f;}
+.btn.secondary{background:#fff;color:var(--ink);}
+.btn.outline{background:transparent;color:var(--teal);border-color:var(--teal);}
+.btn.small{padding:5px 10px;font-size:.8rem;}
+.btn[disabled]{opacity:.5;cursor:not-allowed;}
+.home-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;}
+@media(max-width:760px){.home-grid{grid-template-columns:repeat(2,1fr);}}
+.home-tile{border:1px solid var(--border);background:var(--panel);padding:22px 14px;text-align:center;}
+.home-tile .glyph{font-size:1.7rem;display:block;margin-bottom:8px;}
+.home-tile.disabled{opacity:.55;}
+.home-tile small{display:block;color:var(--muted);font-size:.72rem;margin-top:4px;}
+.stat-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
+.stat{border:1px solid var(--border);background:var(--panel);padding:12px 18px;min-width:120px;}
+.stat .num{font-family:var(--serif);font-size:1.5rem;font-weight:700;}
+.stat .lbl{font-size:.76rem;color:var(--muted);}
+table{width:100%;border-collapse:collapse;font-size:.88rem;}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
+th{font-weight:600;color:var(--muted);font-size:.76rem;text-transform:none;border-bottom:2px solid var(--ink);}
+tr:hover td{background:#FAFAF7;}
+.tag{display:inline-block;padding:2px 8px;font-size:.72rem;border:1px solid var(--border);color:var(--muted);}
+.tag.decision{border-color:var(--ok);color:var(--ok);}
+.tag.discussion{border-color:var(--teal);color:var(--teal);}
+.tag.deferred{border-color:var(--warn);color:var(--warn);}
+.tag.noted{border-color:var(--muted);color:var(--muted);}
+.status-Open{color:var(--danger);}
+.status-Completed{color:var(--ok);}
+.status-Overdue{color:var(--danger);font-weight:600;}
+.status-DueSoon{color:var(--warn);}
+.flag-item{border-left:3px solid var(--warn);padding:8px 12px;margin-bottom:8px;background:#FBF7EF;font-size:.88rem;}
+.rowtools{display:flex;gap:6px;}
+.hidden{display:none !important;}
+.hero{border:1px solid var(--border);background:var(--panel);padding:28px 24px;margin-bottom:20px;border-left:4px solid var(--accent);}
+.hero h1{margin:0 0 6px;font-size:1.5rem;}
+.hero p{margin:0;color:var(--muted);max-width:60ch;}
+footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:6px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.searchbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.searchbar input,.searchbar select{width:auto;flex:1;min-width:160px;}
+.actions-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+.msg{padding:10px 14px;border:1px solid var(--border);font-size:.85rem;margin-bottom:14px;}
+.msg.error{border-color:var(--danger);color:var(--danger);background:#FBF0EF;}
+.msg.ok{border-color:var(--ok);color:var(--ok);background:#F0F7F3;}
+@media print{
+  .app-header,nav.tabs,.no-print,footer{display:none !important;}
+  body{background:#fff;}
+  .section{border:none;padding:0;margin-bottom:20px;box-shadow:none;}
+  main{max-width:100%;padding:0;}
+}
+</style>
+</head>
+<body>
+
+<div class="app-header no-print">
+  <div>
+    <div class="title">Minute Book</div>
+    <div class="org" id="orgNameDisplay">AI Meeting Minutes &amp; Action-Point Secretary</div>
+  </div>
+  <div>
+    <button class="btn small secondary" onclick="showScreen('settings')">Settings</button>
+  </div>
+</div>
+
+<nav class="tabs no-print">
+  <button data-tab="home" class="active" onclick="showScreen('home')">Home</button>
+  <button data-tab="new" onclick="showScreen('new')">New Meeting</button>
+  <button data-tab="review" onclick="showScreen('review')">Review &amp; Export</button>
+  <button data-tab="library" onclick="showScreen('library')">Meeting Library</button>
+  <button data-tab="tracker" onclick="showScreen('tracker')">Action Tracker</button>
+</nav>
+
+<main>
+
+<!-- ============ HOME ============ -->
+<section id="screen-home">
+  <div class="hero">
+    <h1>Prepare board-ready minutes from rough notes</h1>
+    <p>Record the gist of a meeting, and this assistant will structure it into formal minutes, decisions, and a tracked action-point register — nothing invented beyond what you give it.</p>
+  </div>
+
+  <div class="stat-row" id="homeStats"></div>
+
+  <div class="home-grid">
+    <div class="home-tile" onclick="startNew('notes')">
+      <span class="glyph">✍️</span>Quick Notes
+      <small>Rough points, typed fast</small>
+    </div>
+    <div class="home-tile" onclick="startNew('transcript')">
+      <span class="glyph">📄</span>Paste Transcript
+      <small>TXT or pasted text</small>
+    </div>
+    <div class="home-tile" onclick="showScreen('record')">
+      <span class="glyph">🎙</span>Record Meeting
+      <small>Live, in-browser</small>
+    </div>
+    <div class="home-tile" onclick="showScreen('record');switchRecordTab('upload')">
+      <span class="glyph">📁</span>Upload Recording
+      <small>Attach audio/video</small>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Recent meetings</h2>
+    <div id="recentMeetings"></div>
+  </div>
+</section>
+
+<!-- ============ NEW MEETING ============ -->
+<section id="screen-new" class="hidden">
+  <div class="section">
+    <h2>Meeting details</h2>
+    <div class="caption">All fields optional — fill in what you have; add the rest later.</div>
+    <div class="grid2">
+      <div class="field"><label>Organisation</label><input type="text" id="mOrg"></div>
+      <div class="field"><label>Meeting title / reference no.</label><input type="text" id="mTitle"></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label>Meeting type / template</label>
+        <select id="mType">
+          <option>Board Meeting</option><option>Management Meeting</option><option>Staff Meeting</option>
+          <option>Review Meeting</option><option>Committee Meeting</option><option>Training / Workshop</option>
+          <option>General Meeting</option>
+        </select>
+      </div>
+      <div class="field"><label>Date</label><input type="date" id="mDate"></div>
+      <div class="field"><label>Venue / platform</label><input type="text" id="mVenue"></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label>Start time</label><input type="time" id="mStart"></div>
+      <div class="field"><label>End time</label><input type="time" id="mEnd"></div>
+      <div class="field"><label>Output language</label>
+        <select id="mLang"><option>English Minutes</option><option>Original language</option><option>Hindi Minutes</option><option>Bilingual Minutes</option></select>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>Chairperson</label><input type="text" id="mChair"></div>
+      <div class="field"><label>Secretary / recording officer</label><input type="text" id="mSec"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>Members present</label><textarea id="mPresent" placeholder="One per line, or comma separated"></textarea></div>
+      <div class="field"><label>Members absent</label><textarea id="mAbsent"></textarea></div>
+    </div>
+    <div class="field"><label>Special invitees</label><input type="text" id="mInvitees"></div>
+    <div class="field"><label>Agenda (optional — leave blank to let AI infer from the notes)</label><textarea id="mAgenda"></textarea></div>
+  </div>
+
+  <div class="section">
+    <h2>Meeting content</h2>
+    <div class="caption">Hindi, English, and Hinglish mixed together are all fine — meaning is preserved, not translated, unless you choose Hindi or Bilingual above.</div>
+    <div class="field"><textarea id="mInput" rows="10" placeholder="Paste transcript or type quick notes here, e.g. 'Recovery ka performance satisfactory nahi hai. GM said all branches should review overdue accounts every Monday...'"></textarea></div>
+    <div id="genMsg"></div>
+    <button class="btn" id="genBtn" onclick="generateMinutes()">Generate minutes</button>
+  </div>
+</section>
+
+<!-- ============ RECORD / UPLOAD ============ -->
+<section id="screen-record" class="hidden">
+  <div class="section">
+    <div class="rowtools" style="margin-bottom:16px;">
+      <button class="btn small secondary" id="recTabLive" onclick="switchRecordTab('live')">Record live</button>
+      <button class="btn small outline" id="recTabUpload" onclick="switchRecordTab('upload')">Upload a file instead</button>
+    </div>
+
+    <div id="recLivePanel">
+      <h2>Record meeting</h2>
+      <div class="caption">Live transcription uses your browser's built-in speech recognition. Works well in Chrome (desktop &amp; Android); support on iPhone Safari is limited — if it doesn't transcribe, the audio is still recorded and you can type/paste the notes afterwards.</div>
+      <div style="font-family:var(--serif);font-size:2rem;margin:10px 0;" id="recTimer">00:00</div>
+      <div class="rowtools" style="margin-bottom:14px;">
+        <button class="btn" id="recStartBtn" onclick="startRecording()">● Start</button>
+        <button class="btn secondary hidden" id="recPauseBtn" onclick="pauseRecording()">Pause</button>
+        <button class="btn secondary hidden" id="recResumeBtn" onclick="resumeRecording()">Resume</button>
+        <button class="btn outline hidden" id="recStopBtn" onclick="stopRecording()">Stop</button>
+      </div>
+      <div id="recStatus" class="caption"></div>
+      <label>Live transcript (editable)</label>
+      <textarea id="recTranscript" rows="8" placeholder="Transcript will appear here as you speak..."></textarea>
+      <div class="actions-toolbar">
+        <input type="text" id="recName" placeholder="Recording name (optional)" style="max-width:260px;">
+        <button class="btn secondary" onclick="useTranscriptInNewMeeting()">Use this transcript in a new meeting</button>
+      </div>
+    </div>
+
+    <div id="recUploadPanel" class="hidden">
+      <h2>Upload recording</h2>
+      <div class="caption">Attaches the file to your library. Browsers can't reliably transcribe an existing audio/video file directly — for accuracy, paste a transcript from elsewhere, or use "Play &amp; try live transcribe" below (experimental: plays the file while listening through your microphone).</div>
+      <input type="file" id="upFile" accept="audio/*,video/*" onchange="handleUploadFile(event)">
+      <div id="upStatus" class="caption"></div>
+      <div class="actions-toolbar hidden" id="upControls">
+        <audio id="upAudio" controls style="max-width:100%;"></audio>
+        <button class="btn secondary" onclick="playAndTryTranscribe()">▶ Play &amp; try live transcribe</button>
+        <input type="text" id="upName" placeholder="Recording name (optional)" style="max-width:260px;">
+        <button class="btn" onclick="saveUploadedRecording()">Save to library</button>
+      </div>
+      <div style="margin-top:10px;"><a href="#" onclick="showScreen('new');return false;">Or just paste the transcript directly →</a></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Saved recordings</h2>
+    <div id="recordingsList"><p class="caption">Loading…</p></div>
+  </div>
+</section>
+
+<!-- ============ REVIEW & EXPORT ============ -->
+<section id="screen-review" class="hidden">
+  <div id="reviewEmpty" class="section"><p>No draft yet. Start from <a href="#" onclick="showScreen('new');return false;">New Meeting</a>.</p></div>
+  <div id="reviewBody" class="hidden">
+
+    <div class="section">
+      <h2>Executive summary</h2>
+      <textarea id="rExecSummary" rows="4"></textarea>
+      <div class="field" style="margin-top:10px;"><label>One-minute summary</label><textarea id="rOneMin" rows="2"></textarea></div>
+    </div>
+
+    <div class="section">
+      <h2>Agenda &amp; proceedings</h2>
+      <div id="agendaList"></div>
+      <button class="btn small secondary" onclick="addAgendaItem()">+ Add agenda item</button>
+    </div>
+
+    <div class="section">
+      <h2>Action point register</h2>
+      <table id="actionTable">
+        <thead><tr><th>#</th><th>Agenda / subject</th><th>Action required</th><th>Responsible</th><th>Deadline</th><th>Priority</th><th>Status</th><th>Remarks</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button class="btn small secondary" style="margin-top:10px;" onclick="addActionRow()">+ Add action point</button>
+    </div>
+
+    <div class="section">
+      <h2>Pending / deferred matters</h2>
+      <textarea id="rPending" rows="4" placeholder="One matter per line"></textarea>
+    </div>
+
+    <div class="section no-print">
+      <h2>Listen to minutes</h2>
+      <div class="rowtools" style="margin-bottom:10px;flex-wrap:wrap;">
+        <select id="ttsScope"><option value="full">Full minutes</option><option value="exec">Executive summary only</option></select>
+        <select id="ttsVoice"></select>
+        <select id="ttsSpeed"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+        <button class="btn small secondary" onclick="ttsPlay()">▶ Play</button>
+        <button class="btn small secondary" onclick="ttsPause()">Pause</button>
+        <button class="btn small secondary" onclick="ttsResume()">Resume</button>
+        <button class="btn small outline" onclick="ttsStop()">Stop</button>
+      </div>
+      <div id="ttsStatus" class="caption"></div>
+    </div>
+
+    <div class="section no-print">
+      <h2>Ask AI about this meeting</h2>
+      <div class="caption">Answers come only from this meeting's minutes — nothing outside it.</div>
+      <div id="qaHistory"></div>
+      <div class="rowtools">
+        <input type="text" id="qaInput" placeholder="e.g. What decisions were taken on recovery?" style="flex:1;">
+        <button class="btn secondary" onclick="askAboutMeeting()">Ask</button>
+      </div>
+    </div>
+
+    <div class="section no-print">
+      <h2>AI check</h2>
+      <div class="caption">Flags missing owners, deadlines, unclear decisions, and possible duplicates — for your review only, nothing is changed automatically.</div>
+      <button class="btn secondary" onclick="runAICheck()">Run AI check</button>
+      <div id="aiCheckResults" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="section no-print">
+      <h2>Save &amp; export</h2>
+      <div class="actions-toolbar">
+        <button class="btn" onclick="saveMeeting()">Save meeting</button>
+        <button class="btn secondary" onclick="exportWord()">Export Word (.doc)</button>
+        <button class="btn secondary" onclick="exportExcel()">Export Excel (.xlsx)</button>
+        <button class="btn secondary" onclick="window.print()">Export / Print PDF</button>
+        <button class="btn outline" onclick="copyPlainText()">Copy to clipboard</button>
+        <button class="btn outline" onclick="shareMinutes()">Share</button>
+      </div>
+      <div id="saveMsg"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LIBRARY ============ -->
+<section id="screen-library" class="hidden">
+  <div class="section">
+    <h2>Meeting library</h2>
+    <div class="searchbar">
+      <input type="text" id="libSearch" placeholder="Search by title, person, department, agenda, keyword..." oninput="renderLibrary()">
+      <select id="libSort" onchange="renderLibrary()">
+        <option value="date-desc">Newest first</option>
+        <option value="date-asc">Oldest first</option>
+        <option value="title">Title A–Z</option>
+      </select>
+    </div>
+    <div id="libraryList"></div>
+  </div>
+</section>
+
+<!-- ============ TRACKER ============ -->
+<section id="screen-tracker" class="hidden">
+  <div class="section">
+    <div class="stat-row" id="trackerStats"></div>
+    <div class="searchbar">
+      <input type="text" id="trackSearch" placeholder="Search action points..." oninput="renderTracker()">
+      <select id="trackStatus" onchange="renderTracker()">
+        <option value="">All statuses</option>
+        <option>Open</option><option>In Progress</option><option>Completed</option>
+        <option>Deferred</option><option>Closed</option><option>Pending clarification</option>
+      </select>
+    </div>
+    <table>
+      <thead><tr><th>Meeting</th><th>Subject</th><th>Action</th><th>Responsible</th><th>Deadline</th><th>Status</th><th></th></tr></thead>
+      <tbody id="trackerBody"></tbody>
+    </table>
+    <div class="actions-toolbar"><button class="btn secondary" onclick="exportTracker()">Export tracker (.xlsx)</button></div>
+  </div>
+</section>
+
+<!-- ============ SETTINGS ============ -->
+<section id="screen-settings" class="hidden">
+  <div class="section">
+    <h2>AI configuration</h2>
+    <div class="caption">Your API key is stored only in this browser (localStorage) and sent directly to Anthropic when generating minutes. It is never sent anywhere else. Clear it any time below.</div>
+    <div class="field"><label>Anthropic API key</label><input type="password" id="setApiKey" placeholder="sk-ant-..."></div>
+    <div class="field"><label>Model</label><input type="text" id="setModel" value="claude-sonnet-4-5"></div>
+    <div class="field"><label>Default organisation name</label><input type="text" id="setOrg"></div>
+    <div class="field"><label>Default meeting template</label>
+      <select id="setTemplate">
+        <option>Board Meeting</option><option>Management Meeting</option><option>Staff Meeting</option>
+        <option>Review Meeting</option><option>Committee Meeting</option><option>Training / Workshop</option>
+        <option>General Meeting</option>
+      </select>
+    </div>
+    <button class="btn" onclick="saveSettings()">Save settings</button>
+    <div id="setMsg"></div>
+  </div>
+  <div class="section">
+    <h2>Data</h2>
+    <p class="caption">All meetings, transcripts, and settings are stored only on this device. Nothing is uploaded except the text sent to Anthropic when you click Generate or Run AI check.</p>
+    <button class="btn outline" onclick="if(confirm('Delete ALL saved meetings on this device? This cannot be undone.')){localStorage.removeItem('mb_meetings');renderAll();alert('All meetings deleted.');}">Delete all meetings</button>
+  </div>
+</section>
+
+</main>
+
+<footer>Developed by Anil Sharma, Former General Manager, Central Bank of India.</footer>
+
+<script>
+/* ---------- state & storage ---------- */
+let DB = { meetings: JSON.parse(localStorage.getItem('mb_meetings')||'[]') };
+let SETTINGS = JSON.parse(localStorage.getItem('mb_settings')||'{}');
+let draft = null; // current in-progress meeting object
+
+function persistMeetings(){ localStorage.setItem('mb_meetings', JSON.stringify(DB.meetings)); }
+function persistSettings(){ localStorage.setItem('mb_settings', JSON.stringify(SETTINGS)); }
+function uid(){ return 'm_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); }
+
+/* ---------- navigation ---------- */
+function showScreen(name){
+  document.querySelectorAll('main > section').forEach(s=>s.classList.add('hidden'));
+  document.getElementById('screen-'+name).classList.remove('hidden');
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  if(name==='home') renderHome();
+  if(name==='review'){ renderReview(); populateVoiceList(); renderQAHistory(); }
+  if(name==='library') renderLibrary();
+  if(name==='tracker') renderTracker();
+  if(name==='settings') loadSettingsForm();
+  if(name==='record'){ switchRecordTab('live'); renderRecordingsList(); }
+}
+
+function startNew(mode){
+  showScreen('new');
+  document.getElementById('mInput').placeholder = mode==='transcript'
+    ? 'Paste the meeting transcript here...'
+    : 'Type rough points, e.g. "Recovery ka performance satisfactory nahi hai. GM said all branches should review overdue accounts every Monday..."';
+  if(SETTINGS.org) document.getElementById('mOrg').value = SETTINGS.org;
+  if(SETTINGS.template) document.getElementById('mType').value = SETTINGS.template;
+}
+
+/* ---------- settings ---------- */
+function loadSettingsForm(){
+  document.getElementById('setApiKey').value = SETTINGS.apiKey||'';
+  document.getElementById('setModel').value = SETTINGS.model||'claude-sonnet-4-5';
+  document.getElementById('setOrg').value = SETTINGS.org||'';
+  document.getElementById('setTemplate').value = SETTINGS.template||'Board Meeting';
+}
+function saveSettings(){
+  SETTINGS = {
+    apiKey: document.getElementById('setApiKey').value.trim(),
+    model: document.getElementById('setModel').value.trim() || 'claude-sonnet-4-5',
+    org: document.getElementById('setOrg').value.trim(),
+    template: document.getElementById('setTemplate').value
+  };
+  persistSettings();
+  document.getElementById('setMsg').innerHTML = '<div class="msg ok">Settings saved.</div>';
+}
+
+/* ---------- Claude API ---------- */
+async function callClaude(system, userText, maxTokens){
+  if(!SETTINGS.apiKey){ throw new Error('Add your Anthropic API key in Settings first.'); }
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'x-api-key': SETTINGS.apiKey,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body: JSON.stringify({
+      model: SETTINGS.model || 'claude-sonnet-4-5',
+      max_tokens: maxTokens || 4000,
+      system: system,
+      messages:[{role:'user', content:userText}]
+    })
+  });
+  if(!res.ok){
+    const t = await res.text();
+    throw new Error('API error ('+res.status+'): '+t.slice(0,300));
+  }
+  const data = await res.json();
+  const textBlock = (data.content||[]).find(b=>b.type==='text');
+  if(!textBlock) throw new Error('No text in response.');
+  return textBlock.text;
+}
+function parseJSON(text){
+  let t = text.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+  return JSON.parse(t);
+}
+
+const ACCURACY_RULES = `You are an AI meeting secretary preparing formal minutes for Indian organisational/board meetings.
+Rules you must follow strictly:
+- Never invent decisions, approvals, names, deadlines, figures, or commitments not present in the input.
+- Preserve names, numbers, dates, amounts, percentages, designations, scheme names and technical terms exactly as given.
+- Do not treat every sentence as a decision. Distinguish Discussion, Suggestion, Observation, Decision, Approval, Resolution, and Action.
+- If no decision is established for an agenda item, say "No specific decision recorded".
+- Meetings may mix English, Hindi and Hinglish in the same sentence. Understand the meaning correctly; do not translate Hindi to English unless the requested output language is "English Minutes", "Hindi Minutes" or "Bilingual Minutes" (in which case render accordingly), and use formal minute-book language for the final wording either way.
+- If a responsible person or deadline is not mentioned for an action, leave it blank / "Not specified" — never guess.
+- Output ONLY valid JSON, no markdown fences, no commentary.`;
+
+async function generateMinutes(){
+  const btn = document.getElementById('genBtn');
+  const msg = document.getElementById('genMsg');
+  const input = document.getElementById('mInput').value.trim();
+  if(!input){ msg.innerHTML = '<div class="msg error">Enter some notes or a transcript first.</div>'; return; }
+  btn.disabled = true;
+  msg.innerHTML = '<div class="msg"><span class="spinner"></span>Structuring the meeting (step 1 of 2)...</div>';
+
+  const details = {
+    org: val('mOrg'), title: val('mTitle'), type: val('mType'), date: val('mDate'),
+    start: val('mStart'), end: val('mEnd'), venue: val('mVenue'), lang: val('mLang'),
+    chair: val('mChair'), secretary: val('mSec'), present: val('mPresent'),
+    absent: val('mAbsent'), invitees: val('mInvitees'), agenda: val('mAgenda')
+  };
+
+  const boardMode = details.type === 'Board Meeting';
+  try{
+    const p1 = `Meeting type/template: ${details.type}. Output language: ${details.lang}. Stated agenda (may be blank — infer if so): ${details.agenda || '(none given)'}.
+
+Meeting notes / transcript:
+"""
+${input}
+"""
+${boardMode ? `This is a Board Meeting: use formal corporate/Board language such as "After due deliberation, the Board noted...", "The Board considered the matter and approved...", "The Board advised that...", "The Board directed the Management to..." — but only where the source material actually supports approval/direction/resolution wording. Where it is genuinely unclear whether a matter was approved or merely discussed, set "ambiguous": true and explain why in "ambiguityNote".` : ''}
+
+Return JSON with this exact shape:
+{
+ "agendaItems":[
+   {"heading":"short agenda item title","discussion":"1-3 sentence formal paraphrase of what was discussed","type":"Decision|Discussion|Approval|Resolution|Deferred|Noted","decisionText":"formal decision/resolution wording, or 'No specific decision recorded'","responsibility":"person/department directed to act, or ''","timeline":"timeline mentioned, or ''","ambiguous":false,"ambiguityNote":""}
+ ],
+ "pendingMatters":["matter needing follow-up or further approval", "..."]
+}
+Use formal minute-book language appropriate to a ${details.type}. Keep each discussion paraphrase concise.`;
+    const r1 = await callClaude(ACCURACY_RULES, p1, 2200);
+    const parsed1 = parseJSON(r1);
+
+    msg.innerHTML = '<div class="msg"><span class="spinner"></span>Extracting action points and summaries (step 2 of 2)...</div>';
+    const p2 = `Based on these structured meeting minutes (JSON below), produce action points and summaries.
+
+${JSON.stringify(parsed1)}
+
+Original notes for deadline/owner extraction:
+"""
+${input}
+"""
+
+Return JSON with this exact shape:
+{
+ "actionPoints":[
+   {"subject":"agenda/subject","action":"action required","responsible":"person/department or 'Not specified'","deadline":"deadline text or 'Not specified'","priority":"High|Medium|Low","status":"Open","remarks":""}
+ ],
+ "executiveSummary":"5-10 point summary as a single paragraph or short bullet-like sentences",
+ "oneMinuteSummary":"1-3 sentence overview"
+}`;
+    const r2 = await callClaude(ACCURACY_RULES, p2, 1800);
+    const parsed2 = parseJSON(r2);
+
+    draft = {
+      id: uid(), createdAt: new Date().toISOString(), details,
+      boardMode,
+      agendaItems: parsed1.agendaItems||[],
+      pendingMatters: parsed1.pendingMatters||[],
+      actionPoints: (parsed2.actionPoints||[]).map(a=>({...a, status:a.status||'Open'})),
+      executiveSummary: parsed2.executiveSummary||'',
+      oneMinuteSummary: parsed2.oneMinuteSummary||'',
+      rawInput: input,
+      qaHistory: []
+    };
+    msg.innerHTML = '<div class="msg ok">Draft ready. Opening review screen…</div>';
+    setTimeout(()=>showScreen('review'), 400);
+  }catch(err){
+    msg.innerHTML = '<div class="msg error">'+escapeHtml(err.message)+'</div>';
+  }finally{
+    btn.disabled = false;
+  }
+}
+function val(id){ return document.getElementById(id).value.trim(); }
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------- review screen render ---------- */
+function renderReview(){
+  const empty = document.getElementById('reviewEmpty');
+  const body = document.getElementById('reviewBody');
+  if(!draft){ empty.classList.remove('hidden'); body.classList.add('hidden'); return; }
+  empty.classList.add('hidden'); body.classList.remove('hidden');
+  document.getElementById('rExecSummary').value = draft.executiveSummary||'';
+  document.getElementById('rOneMin').value = draft.oneMinuteSummary||'';
+  document.getElementById('rPending').value = (draft.pendingMatters||[]).join('\n');
+  renderAgendaList();
+  renderActionTable();
+  document.getElementById('aiCheckResults').innerHTML = '';
+  document.getElementById('saveMsg').innerHTML = '';
+}
+function renderAgendaList(){
+  const wrap = document.getElementById('agendaList');
+  wrap.innerHTML = '';
+  (draft.agendaItems||[]).forEach((item, i)=>{
+    const div = document.createElement('div');
+    div.style = 'border:1px solid var(--border);padding:12px;margin-bottom:10px;';
+    div.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;">
+        <input type="text" value="${escapeHtml(item.heading)}" style="font-weight:600;border:none;padding:2px 0;flex:1;" oninput="draft.agendaItems[${i}].heading=this.value">
+        <span class="tag ${tagClass(item.type)}">${escapeHtml(item.type||'Discussion')}</span>
+        <button class="btn small outline" onclick="removeAgendaItem(${i})">Remove</button>
+      </div>
+      ${item.ambiguous ? `<div class="flag-item">Ambiguous whether approved or only discussed: ${escapeHtml(item.ambiguityNote||'')}</div>` : ''}
+      <label style="margin-top:8px;">Discussion</label>
+      <textarea rows="2" oninput="draft.agendaItems[${i}].discussion=this.value">${escapeHtml(item.discussion)}</textarea>
+      <label style="margin-top:6px;">Decision / resolution</label>
+      <textarea rows="2" oninput="draft.agendaItems[${i}].decisionText=this.value">${escapeHtml(item.decisionText)}</textarea>
+      ${draft.boardMode ? `<div class="grid2" style="margin-top:6px;">
+        <div><label>Responsibility</label><input type="text" value="${escapeHtml(item.responsibility||'')}" oninput="draft.agendaItems[${i}].responsibility=this.value"></div>
+        <div><label>Timeline</label><input type="text" value="${escapeHtml(item.timeline||'')}" oninput="draft.agendaItems[${i}].timeline=this.value"></div>
+      </div>` : ''}`;
+    wrap.appendChild(div);
+  });
+}
+function tagClass(t){
+  t=(t||'').toLowerCase();
+  if(t.includes('decision')||t.includes('resolution')||t.includes('approval')) return 'decision';
+  if(t.includes('defer')) return 'deferred';
+  if(t.includes('noted')) return 'noted';
+  return 'discussion';
+}
+function addAgendaItem(){
+  draft.agendaItems.push({heading:'New agenda item', discussion:'', type:'Discussion', decisionText:'No specific decision recorded'});
+  renderAgendaList();
+}
+function removeAgendaItem(i){ draft.agendaItems.splice(i,1); renderAgendaList(); }
+
+function renderActionTable(){
+  const tbody = document.querySelector('#actionTable tbody');
+  tbody.innerHTML = '';
+  (draft.actionPoints||[]).forEach((a,i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td><input type="text" value="${escapeHtml(a.subject)}" oninput="draft.actionPoints[${i}].subject=this.value"></td>
+      <td><input type="text" value="${escapeHtml(a.action)}" oninput="draft.actionPoints[${i}].action=this.value"></td>
+      <td><input type="text" value="${escapeHtml(a.responsible)}" oninput="draft.actionPoints[${i}].responsible=this.value"></td>
+      <td><input type="text" value="${escapeHtml(a.deadline)}" oninput="draft.actionPoints[${i}].deadline=this.value"></td>
+      <td><select oninput="draft.actionPoints[${i}].priority=this.value">${['High','Medium','Low'].map(p=>`<option ${a.priority===p?'selected':''}>${p}</option>`).join('')}</select></td>
+      <td><select oninput="draft.actionPoints[${i}].status=this.value">${['Open','In Progress','Completed','Deferred','Closed','Pending clarification'].map(s=>`<option ${a.status===s?'selected':''}>${s}</option>`).join('')}</select></td>
+      <td><input type="text" value="${escapeHtml(a.remarks)}" oninput="draft.actionPoints[${i}].remarks=this.value"></td>
+      <td><button class="btn small outline" onclick="removeActionRow(${i})">✕</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+function addActionRow(){
+  draft.actionPoints.push({subject:'',action:'',responsible:'Not specified',deadline:'Not specified',priority:'Medium',status:'Open',remarks:''});
+  renderActionTable();
+}
+function removeActionRow(i){ draft.actionPoints.splice(i,1); renderActionTable(); }
+
+function syncDraftFromForm(){
+  draft.executiveSummary = document.getElementById('rExecSummary').value;
+  draft.oneMinuteSummary = document.getElementById('rOneMin').value;
+  draft.pendingMatters = document.getElementById('rPending').value.split('\n').map(s=>s.trim()).filter(Boolean);
+}
+
+/* ---------- AI check ---------- */
+async function runAICheck(){
+  syncDraftFromForm();
+  const out = document.getElementById('aiCheckResults');
+  out.innerHTML = '<div class="msg"><span class="spinner"></span>Checking draft…</div>';
+  try{
+    const sys = `You review meeting minutes for quality issues. Look for: missing names, unclear decisions, missing action owner, missing deadline, possible contradictory statements, possible transcription errors, duplicate action points, and statements that look like decisions but are not clearly confirmed. Return ONLY JSON: {"flags":["short flag description", "..."]}. If nothing to flag, return {"flags":[]}.`;
+    const r = await callClaude(sys, JSON.stringify({agendaItems:draft.agendaItems, actionPoints:draft.actionPoints, pendingMatters:draft.pendingMatters}), 1200);
+    const parsed = parseJSON(r);
+    if(!parsed.flags || !parsed.flags.length){
+      out.innerHTML = '<div class="msg ok">No issues flagged.</div>';
+    }else{
+      out.innerHTML = parsed.flags.map(f=>`<div class="flag-item">${escapeHtml(f)}</div>`).join('');
+    }
+  }catch(err){
+    out.innerHTML = '<div class="msg error">'+escapeHtml(err.message)+'</div>';
+  }
+}
+
+/* ---------- save ---------- */
+function saveMeeting(){
+  syncDraftFromForm();
+  const idx = DB.meetings.findIndex(m=>m.id===draft.id);
+  if(idx>=0) DB.meetings[idx] = draft; else DB.meetings.push(draft);
+  persistMeetings();
+  document.getElementById('saveMsg').innerHTML = '<div class="msg ok">Meeting saved to the library.</div>';
+}
+
+/* ---------- home ---------- */
+function renderHome(){
+  const total = DB.meetings.length;
+  let openActions=0, overdue=0;
+  const today = new Date().toISOString().slice(0,10);
+  DB.meetings.forEach(m=>(m.actionPoints||[]).forEach(a=>{
+    if(a.status==='Open'||a.status==='In Progress') openActions++;
+    if(isOverdue(a)) overdue++;
+  }));
+  document.getElementById('homeStats').innerHTML = `
+    <div class="stat"><div class="num">${total}</div><div class="lbl">Meetings recorded</div></div>
+    <div class="stat"><div class="num">${openActions}</div><div class="lbl">Open action points</div></div>
+    <div class="stat"><div class="num">${overdue}</div><div class="lbl">Overdue</div></div>`;
+  const recent = [...DB.meetings].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,5);
+  document.getElementById('recentMeetings').innerHTML = recent.length ? recent.map(m=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
+      <span>${escapeHtml(m.details.title||'(untitled)')} — <span style="color:var(--muted)">${escapeHtml(m.details.date||'')}</span></span>
+      <a href="#" onclick="openMeeting('${m.id}');return false;">Open</a>
+    </div>`).join('') : '<p style="color:var(--muted)">No meetings yet.</p>';
+}
+function isOverdue(a){
+  if(a.status==='Completed'||a.status==='Closed') return false;
+  const d = Date.parse(a.deadline);
+  return !isNaN(d) && d < Date.now();
+}
+function openMeeting(id){
+  draft = DB.meetings.find(m=>m.id===id);
+  showScreen('review');
+}
+
+/* ---------- library ---------- */
+function renderLibrary(){
+  const q = (document.getElementById('libSearch')?.value||'').toLowerCase();
+  const sort = document.getElementById('libSort')?.value||'date-desc';
+  let list = DB.meetings.filter(m=>{
+    const hay = JSON.stringify(m).toLowerCase();
+    return !q || hay.includes(q);
+  });
+  list.sort((a,b)=>{
+    if(sort==='title') return (a.details.title||'').localeCompare(b.details.title||'');
+    if(sort==='date-asc') return (a.details.date||'').localeCompare(b.details.date||'');
+    return (b.details.date||'').localeCompare(a.details.date||'');
+  });
+  document.getElementById('libraryList').innerHTML = list.length ? list.map(m=>{
+    const decisions = (m.agendaItems||[]).filter(a=>tagClass(a.type)==='decision').length;
+    const pending = (m.pendingMatters||[]).length;
+    return `<div style="border:1px solid var(--border);padding:12px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <div>
+          <strong>${escapeHtml(m.details.title||'(untitled)')}</strong> — ${escapeHtml(m.details.type||'')}<br>
+          <span style="color:var(--muted);font-size:.85rem;">${escapeHtml(m.details.date||'')} · Chair: ${escapeHtml(m.details.chair||'—')} · ${(m.agendaItems||[]).length} agenda items · ${decisions} decisions · ${(m.actionPoints||[]).length} actions · ${pending} pending</span>
+        </div>
+        <div class="rowtools">
+          <button class="btn small secondary" onclick="openMeeting('${m.id}')">Open</button>
+          <button class="btn small outline" onclick="deleteMeeting('${m.id}')">Delete</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('') : '<p style="color:var(--muted)">No meetings match.</p>';
+}
+function deleteMeeting(id){
+  if(!confirm('Delete this meeting and its transcript permanently?')) return;
+  DB.meetings = DB.meetings.filter(m=>m.id!==id);
+  persistMeetings();
+  renderLibrary(); renderHome();
+}
+
+/* ---------- tracker ---------- */
+function renderTracker(){
+  const q = (document.getElementById('trackSearch')?.value||'').toLowerCase();
+  const st = document.getElementById('trackStatus')?.value||'';
+  let rows = [];
+  DB.meetings.forEach(m=>(m.actionPoints||[]).forEach((a,i)=>{
+    rows.push({meeting:m, a, i});
+  }));
+  let counts = {Total:rows.length, Open:0, 'In Progress':0, Completed:0, Overdue:0};
+  rows.forEach(r=>{ counts[r.a.status] = (counts[r.a.status]||0)+1; if(isOverdue(r.a)) counts.Overdue++; });
+  document.getElementById('trackerStats').innerHTML = ['Total','Open','In Progress','Completed','Overdue'].map(k=>
+    `<div class="stat"><div class="num">${counts[k]||0}</div><div class="lbl">${k}</div></div>`).join('');
+  rows = rows.filter(r=>{
+    const hay = JSON.stringify(r.a).toLowerCase();
+    return (!q || hay.includes(q)) && (!st || r.a.status===st);
+  });
+  document.getElementById('trackerBody').innerHTML = rows.map(r=>{
+    const cls = isOverdue(r.a) ? 'status-Overdue' : ('status-'+r.a.status.replace(/\s/g,''));
+    return `<tr>
+      <td>${escapeHtml(r.meeting.details.title||'(untitled)')}</td>
+      <td>${escapeHtml(r.a.subject)}</td>
+      <td>${escapeHtml(r.a.action)}</td>
+      <td>${escapeHtml(r.a.responsible)}</td>
+      <td>${escapeHtml(r.a.deadline)}</td>
+      <td class="${cls}">
+        <select onchange="updateTrackerStatus('${r.meeting.id}',${r.i},this.value)">
+          ${['Open','In Progress','Completed','Deferred','Closed','Pending clarification'].map(s=>`<option ${r.a.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </td>
+      <td>${isOverdue(r.a)?'🔴':(r.a.status==='Completed'?'🟢':'🟠')}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" style="color:var(--muted)">No action points yet.</td></tr>';
+}
+function updateTrackerStatus(meetingId, idx, value){
+  const m = DB.meetings.find(mm=>mm.id===meetingId);
+  m.actionPoints[idx].status = value;
+  persistMeetings();
+  renderTracker();
+}
+
+/* ---------- export: Word (HTML-compatible .doc) ---------- */
+function buildMinutesHTML(){
+  const d = draft.details;
+  const decisions = (draft.agendaItems||[]).filter(a=>tagClass(a.type)==='decision');
+  return `
+  <h1 style="font-family:Georgia,serif;">${escapeHtml(d.org||'')}</h1>
+  <h2 style="font-family:Georgia,serif;">Minutes of ${escapeHtml(d.title||d.type||'Meeting')}</h2>
+  <p><b>Type:</b> ${escapeHtml(d.type)} &nbsp; <b>Date:</b> ${escapeHtml(d.date)} &nbsp; <b>Time:</b> ${escapeHtml(d.start)}–${escapeHtml(d.end)} &nbsp; <b>Venue:</b> ${escapeHtml(d.venue)}</p>
+  <p><b>Chairperson:</b> ${escapeHtml(d.chair)} &nbsp; <b>Secretary:</b> ${escapeHtml(d.secretary)}</p>
+  <p><b>Present:</b> ${escapeHtml(d.present)}</p>
+  <p><b>Absent:</b> ${escapeHtml(d.absent)}</p>
+  <p><b>Special invitees:</b> ${escapeHtml(d.invitees)}</p>
+  <h3>Executive summary</h3><p>${escapeHtml(draft.executiveSummary)}</p>
+  <h3>Proceedings</h3>
+  ${draft.boardMode ? (draft.agendaItems||[]).map((a,i)=>`
+    <p><b>AGENDA ITEM ${i+1}: ${escapeHtml(a.heading)}</b><br>
+    <b>DISCUSSION:</b> ${escapeHtml(a.discussion)}<br>
+    <b>DECISION/RESOLUTION:</b> ${escapeHtml(a.decisionText)}${a.ambiguous ? ' <i>(status of approval unclear from the source record)</i>' : ''}<br>
+    <b>ACTION REQUIRED:</b> ${(draft.actionPoints||[]).filter(ap=>(ap.subject||'').toLowerCase().includes((a.heading||'').toLowerCase().slice(0,15))).map(ap=>escapeHtml(ap.action)).join('; ') || 'See action point register'}<br>
+    <b>RESPONSIBILITY:</b> ${escapeHtml(a.responsibility||'—')} &nbsp; <b>TIMELINE:</b> ${escapeHtml(a.timeline||'—')}</p>`).join('')
+  : (draft.agendaItems||[]).map((a,i)=>`
+    <p><b>${i+1}. ${escapeHtml(a.heading)}</b><br>
+    ${escapeHtml(a.discussion)}<br>
+    <i>Decision:</i> ${escapeHtml(a.decisionText)}</p>`).join('')}
+  <h3>Decisions / resolutions</h3>
+  <ul>${decisions.map(a=>`<li>${escapeHtml(a.heading)}: ${escapeHtml(a.decisionText)}</li>`).join('') || '<li>No specific decisions recorded.</li>'}</ul>
+  <h3>Action point register</h3>
+  <table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;">
+    <tr><th>Sr.</th><th>Subject</th><th>Action required</th><th>Responsible</th><th>Deadline</th><th>Priority</th><th>Status</th><th>Remarks</th></tr>
+    ${(draft.actionPoints||[]).map((a,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(a.subject)}</td><td>${escapeHtml(a.action)}</td><td>${escapeHtml(a.responsible)}</td><td>${escapeHtml(a.deadline)}</td><td>${escapeHtml(a.priority)}</td><td>${escapeHtml(a.status)}</td><td>${escapeHtml(a.remarks)}</td></tr>`).join('')}
+  </table>
+  <h3>Pending / deferred matters</h3>
+  <ul>${(draft.pendingMatters||[]).map(p=>`<li>${escapeHtml(p)}</li>`).join('') || '<li>None.</li>'}</ul>
+  <p style="margin-top:30px;">Prepared by: ${escapeHtml(d.secretary)} &nbsp;&nbsp;&nbsp; Reviewed/Approved by: ${escapeHtml(d.chair)}</p>
+  <p style="color:#888;font-size:11px;">Developed by Anil Sharma, Former General Manager, Central Bank of India.</p>`;
+}
+function exportWord(){
+  syncDraftFromForm();
+  const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+  <head><meta charset="utf-8"><title>Minutes</title></head><body>${buildMinutesHTML()}</body></html>`;
+  const blob = new Blob(['\ufeff', html], {type:'application/msword'});
+  downloadBlob(blob, (draft.details.title||'minutes').replace(/[^\w-]+/g,'_')+'.doc');
+}
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* ---------- export: Excel ---------- */
+function exportExcel(){
+  syncDraftFromForm();
+  const d = draft.details;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['Organisation', d.org], ['Title', d.title], ['Type', d.type], ['Date', d.date],
+    ['Start', d.start], ['End', d.end], ['Venue', d.venue], ['Chairperson', d.chair],
+    ['Secretary', d.secretary], ['Agenda', d.agenda]
+  ]), 'Meeting Details');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['Present', d.present], ['Absent', d.absent], ['Special Invitees', d.invitees]
+  ]), 'Attendance');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['#','Agenda Item'], ...(draft.agendaItems||[]).map((a,i)=>[i+1,a.heading])
+  ]), 'Agenda');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['#','Heading','Discussion','Type','Decision'],
+    ...(draft.agendaItems||[]).map((a,i)=>[i+1,a.heading,a.discussion,a.type,a.decisionText])
+  ]), 'Minutes');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['Heading','Decision'],
+    ...(draft.agendaItems||[]).filter(a=>tagClass(a.type)==='decision').map(a=>[a.heading,a.decisionText])
+  ]), 'Decisions');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['Sr.','Subject','Action Required','Responsible','Deadline','Priority','Status','Remarks'],
+    ...(draft.actionPoints||[]).map((a,i)=>[i+1,a.subject,a.action,a.responsible,a.deadline,a.priority,a.status,a.remarks])
+  ]), 'Action Points');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['Pending / Deferred Matters'], ...(draft.pendingMatters||[]).map(p=>[p])
+  ]), 'Pending Matters');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['Sr.','Subject','Action Required','Responsible','Deadline','Status'],
+    ...(draft.actionPoints||[]).map((a,i)=>[i+1,a.subject,a.action,a.responsible,a.deadline,a.status])
+  ]), 'Follow-up Tracker');
+  XLSX.writeFile(wb, (d.title||'minutes').replace(/[^\w-]+/g,'_')+'.xlsx');
+}
+function exportTracker(){
+  const rows = [['Meeting','Subject','Action','Responsible','Deadline','Priority','Status','Remarks']];
+  DB.meetings.forEach(m=>(m.actionPoints||[]).forEach(a=>{
+    rows.push([m.details.title||'', a.subject, a.action, a.responsible, a.deadline, a.priority, a.status, a.remarks]);
+  }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Action Tracker');
+  XLSX.writeFile(wb, 'action_point_tracker.xlsx');
+}
+
+/* ---------- copy / share ---------- */
+function plainTextMinutes(){
+  syncDraftFromForm();
+  const d = draft.details;
+  let t = `${d.org}\nMinutes of ${d.title||d.type}\n${d.date} ${d.start}-${d.end} ${d.venue}\nChair: ${d.chair}  Secretary: ${d.secretary}\n\nExecutive Summary:\n${draft.executiveSummary}\n\nProceedings:\n`;
+  (draft.agendaItems||[]).forEach((a,i)=>{ t+=`${i+1}. ${a.heading}\n${a.discussion}\nDecision: ${a.decisionText}\n\n`; });
+  t += 'Action Points:\n';
+  (draft.actionPoints||[]).forEach((a,i)=>{ t+=`${i+1}. ${a.action} — ${a.responsible} — ${a.deadline} [${a.status}]\n`; });
+  return t;
+}
+function copyPlainText(){
+  navigator.clipboard.writeText(plainTextMinutes()).then(()=>{
+    document.getElementById('saveMsg').innerHTML = '<div class="msg ok">Copied to clipboard.</div>';
+  });
+}
+function shareMinutes(){
+  const text = plainTextMinutes();
+  if(navigator.share){ navigator.share({title: draft.details.title||'Minutes', text}); }
+  else { copyPlainText(); }
+}
+
+/* ================= RECORDING (IndexedDB + MediaRecorder + Web Speech API) ================= */
+let idb = null;
+function openRecDB(){
+  return new Promise((resolve,reject)=>{
+    const req = indexedDB.open('mb_recordings', 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore('recordings', {keyPath:'id'}); };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function dbPut(rec){
+  idb = idb || await openRecDB();
+  return new Promise((resolve,reject)=>{
+    const tx = idb.transaction('recordings','readwrite');
+    tx.objectStore('recordings').put(rec);
+    tx.oncomplete = ()=>resolve(); tx.onerror = ()=>reject(tx.error);
+  });
+}
+async function dbGetAll(){
+  idb = idb || await openRecDB();
+  return new Promise((resolve,reject)=>{
+    const tx = idb.transaction('recordings','readonly');
+    const req = tx.objectStore('recordings').getAll();
+    req.onsuccess = ()=>resolve(req.result); req.onerror = ()=>reject(req.error);
+  });
+}
+async function dbDelete(id){
+  idb = idb || await openRecDB();
+  return new Promise((resolve,reject)=>{
+    const tx = idb.transaction('recordings','readwrite');
+    tx.objectStore('recordings').delete(id);
+    tx.oncomplete = ()=>resolve(); tx.onerror = ()=>reject(tx.error);
+  });
+}
+
+function switchRecordTab(which){
+  document.getElementById('recLivePanel').classList.toggle('hidden', which!=='live');
+  document.getElementById('recUploadPanel').classList.toggle('hidden', which!=='upload');
+  document.getElementById('recTabLive').className = 'btn small '+(which==='live'?'secondary':'outline');
+  document.getElementById('recTabUpload').className = 'btn small '+(which==='upload'?'secondary':'outline');
+}
+
+let mediaRecorder=null, mediaChunks=[], recognizer=null, recTimerInterval=null, recSeconds=0, recStream=null;
+function fmtTime(s){ const m=Math.floor(s/60), sec=s%60; return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0'); }
+
+async function startRecording(){
+  try{
+    recStream = await navigator.mediaDevices.getUserMedia({audio:true});
+  }catch(e){
+    document.getElementById('recStatus').innerHTML = '<div class="msg error">Microphone access denied or unavailable.</div>';
+    return;
+  }
+  mediaChunks = [];
+  mediaRecorder = new MediaRecorder(recStream);
+  mediaRecorder.ondataavailable = e=>{ if(e.data.size>0) mediaChunks.push(e.data); };
+  mediaRecorder.start();
+
+  recSeconds = 0;
+  document.getElementById('recTimer').textContent = '00:00';
+  recTimerInterval = setInterval(()=>{ recSeconds++; document.getElementById('recTimer').textContent = fmtTime(recSeconds); }, 1000);
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(SR){
+    recognizer = new SR();
+    recognizer.continuous = true; recognizer.interimResults = true;
+    recognizer.lang = (document.getElementById('mLang')?.value||'').includes('Hindi') ? 'hi-IN' : 'en-IN';
+    let finalText = document.getElementById('recTranscript').value ? document.getElementById('recTranscript').value+' ' : '';
+    recognizer.onresult = (ev)=>{
+      let interim = '';
+      for(let i=ev.resultIndex;i<ev.results.length;i++){
+        if(ev.results[i].isFinal) finalText += ev.results[i][0].transcript + ' ';
+        else interim += ev.results[i][0].transcript;
+      }
+      document.getElementById('recTranscript').value = finalText + interim;
+    };
+    recognizer.onerror = (e)=>{ document.getElementById('recStatus').innerHTML = '<div class="caption">Speech recognition: '+e.error+' (recording continues; you can still type/edit the transcript).</div>'; };
+    recognizer.onend = ()=>{ if(mediaRecorder && mediaRecorder.state==='recording') recognizer.start(); };
+    try{ recognizer.start(); }catch(e){}
+  }else{
+    document.getElementById('recStatus').innerHTML = '<div class="caption">Live transcription isn\'t supported in this browser — audio is still being recorded; type notes below or paste a transcript afterwards.</div>';
+  }
+
+  document.getElementById('recStartBtn').classList.add('hidden');
+  document.getElementById('recPauseBtn').classList.remove('hidden');
+  document.getElementById('recStopBtn').classList.remove('hidden');
+  document.getElementById('recStatus').innerHTML = '<div class="msg ok">Recording…</div>';
+}
+function pauseRecording(){
+  if(mediaRecorder && mediaRecorder.state==='recording'){ mediaRecorder.pause(); clearInterval(recTimerInterval); if(recognizer) recognizer.stop(); }
+  document.getElementById('recPauseBtn').classList.add('hidden');
+  document.getElementById('recResumeBtn').classList.remove('hidden');
+}
+function resumeRecording(){
+  if(mediaRecorder && mediaRecorder.state==='paused'){ mediaRecorder.resume(); recTimerInterval = setInterval(()=>{ recSeconds++; document.getElementById('recTimer').textContent = fmtTime(recSeconds); }, 1000); if(recognizer){ try{recognizer.start();}catch(e){} } }
+  document.getElementById('recResumeBtn').classList.add('hidden');
+  document.getElementById('recPauseBtn').classList.remove('hidden');
+}
+async function stopRecording(){
+  clearInterval(recTimerInterval);
+  if(recognizer){ recognizer.onend=null; recognizer.stop(); }
+  if(mediaRecorder && mediaRecorder.state!=='inactive'){
+    await new Promise(resolve=>{ mediaRecorder.onstop = resolve; mediaRecorder.stop(); });
+  }
+  if(recStream) recStream.getTracks().forEach(t=>t.stop());
+  const blob = new Blob(mediaChunks, {type:'audio/webm'});
+  const name = document.getElementById('recName').value.trim() || ('Recording '+new Date().toLocaleString());
+  const rec = {id: uid(), name, createdAt: new Date().toISOString(), durationSec: recSeconds, blob, transcript: document.getElementById('recTranscript').value, type:'live'};
+  await dbPut(rec);
+  document.getElementById('recStartBtn').classList.remove('hidden');
+  document.getElementById('recPauseBtn').classList.add('hidden');
+  document.getElementById('recResumeBtn').classList.add('hidden');
+  document.getElementById('recStopBtn').classList.add('hidden');
+  document.getElementById('recStatus').innerHTML = '<div class="msg ok">Saved to your recordings library.</div>';
+  renderRecordingsList();
+}
+function useTranscriptInNewMeeting(){
+  const t = document.getElementById('recTranscript').value.trim();
+  showScreen('new');
+  document.getElementById('mInput').value = t;
+}
+
+async function renderRecordingsList(){
+  const wrap = document.getElementById('recordingsList');
+  const recs = (await dbGetAll()).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  wrap.innerHTML = recs.length ? recs.map(r=>`
+    <div style="border:1px solid var(--border);padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <div>
+        <input type="text" value="${escapeHtml(r.name)}" style="border:none;font-weight:600;padding:2px 0;" onchange="renameRecording('${r.id}',this.value)">
+        <div class="caption" style="margin:0;">${r.type==='live'?'Recorded':'Uploaded'} · ${fmtTime(r.durationSec||0)} · ${new Date(r.createdAt).toLocaleString()}</div>
+      </div>
+      <div class="rowtools">
+        <button class="btn small secondary" onclick="playRecording('${r.id}')">▶ Play</button>
+        ${r.transcript?`<button class="btn small secondary" onclick="loadRecordingTranscript('${r.id}')">Use transcript</button>`:''}
+        <button class="btn small outline" onclick="deleteRecordingUI('${r.id}')">Delete</button>
+      </div>
+    </div>`).join('') : '<p class="caption">No recordings saved yet.</p>';
+}
+async function renameRecording(id, name){
+  const recs = await dbGetAll(); const r = recs.find(x=>x.id===id); if(!r) return;
+  r.name = name; await dbPut(r);
+}
+async function deleteRecordingUI(id){
+  if(!confirm('Delete this recording permanently?')) return;
+  await dbDelete(id); renderRecordingsList();
+}
+async function playRecording(id){
+  const recs = await dbGetAll(); const r = recs.find(x=>x.id===id); if(!r) return;
+  const url = URL.createObjectURL(r.blob);
+  const audio = new Audio(url); audio.play();
+}
+async function loadRecordingTranscript(id){
+  const recs = await dbGetAll(); const r = recs.find(x=>x.id===id); if(!r) return;
+  showScreen('new'); document.getElementById('mInput').value = r.transcript||'';
+}
+
+/* ---------- upload recording ---------- */
+let uploadedFile = null;
+function handleUploadFile(ev){
+  uploadedFile = ev.target.files[0];
+  if(!uploadedFile) return;
+  document.getElementById('upStatus').innerHTML = '<div class="caption">'+escapeHtml(uploadedFile.name)+' ('+Math.round(uploadedFile.size/1024)+' KB)</div>';
+  const url = URL.createObjectURL(uploadedFile);
+  const audio = document.getElementById('upAudio'); audio.src = url;
+  document.getElementById('upControls').classList.remove('hidden');
+}
+let uploadRecognizer = null;
+function playAndTryTranscribe(){
+  const audio = document.getElementById('upAudio');
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ alert('Live transcription is not supported in this browser.'); audio.play(); return; }
+  uploadRecognizer = new SR();
+  uploadRecognizer.continuous = true; uploadRecognizer.interimResults = true;
+  let text = '';
+  uploadRecognizer.onresult = (ev)=>{
+    for(let i=ev.resultIndex;i<ev.results.length;i++){ if(ev.results[i].isFinal) text += ev.results[i][0].transcript+' '; }
+    document.getElementById('upStatus').innerHTML = '<div class="caption">Transcribing… (turn your volume up, keep the room quiet)</div><textarea rows="4" id="upTranscriptDraft">'+escapeHtml(text)+'</textarea>';
+  };
+  audio.onended = ()=>{ try{uploadRecognizer.stop();}catch(e){} };
+  try{ uploadRecognizer.start(); }catch(e){}
+  audio.play();
+}
+async function saveUploadedRecording(){
+  if(!uploadedFile){ alert('Choose a file first.'); return; }
+  const name = document.getElementById('upName').value.trim() || uploadedFile.name;
+  const transcriptEl = document.getElementById('upTranscriptDraft');
+  const rec = {id: uid(), name, createdAt: new Date().toISOString(), durationSec: Math.round(document.getElementById('upAudio').duration)||0, blob: uploadedFile, transcript: transcriptEl?transcriptEl.value:'', type:'uploaded'};
+  await dbPut(rec);
+  document.getElementById('upStatus').innerHTML = '<div class="msg ok">Saved to your recordings library.</div>';
+  renderRecordingsList();
+}
+
+/* ================= TEXT-TO-SPEECH ================= */
+function populateVoiceList(){
+  const sel = document.getElementById('ttsVoice');
+  if(!sel) return;
+  const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
+  if(!voices.length){ speechSynthesis.onvoiceschanged = populateVoiceList; return; }
+  sel.innerHTML = voices.map((v,i)=>`<option value="${i}">${escapeHtml(v.name)} (${v.lang})</option>`).join('');
+  const preferHindi = (draft && draft.details && draft.details.lang||'').includes('Hindi');
+  const idx = voices.findIndex(v=> preferHindi ? v.lang.startsWith('hi') : v.lang.startsWith('en'));
+  if(idx>=0) sel.value = idx;
+}
+let ttsUtterances = [], ttsIndex = 0;
+function ttsPlay(){
+  if(!window.speechSynthesis){ document.getElementById('ttsStatus').innerHTML='<div class="msg error">Speech synthesis not supported in this browser.</div>'; return; }
+  speechSynthesis.cancel();
+  syncDraftFromForm();
+  const scope = document.getElementById('ttsScope').value;
+  const text = scope==='exec' ? (draft.executiveSummary||'') : plainTextMinutes();
+  const chunks = text.split(/\n\n+/).filter(s=>s.trim());
+  const voices = speechSynthesis.getVoices();
+  const voiceIdx = parseInt(document.getElementById('ttsVoice').value||'0',10);
+  const rate = parseFloat(document.getElementById('ttsSpeed').value||'1');
+  ttsUtterances = chunks.map(c=>{
+    const u = new SpeechSynthesisUtterance(c);
+    if(voices[voiceIdx]) u.voice = voices[voiceIdx];
+    u.rate = rate;
+    return u;
+  });
+  ttsIndex = 0;
+  document.getElementById('ttsStatus').innerHTML = '<div class="msg ok">Playing…</div>';
+  playNextUtterance();
+}
+function playNextUtterance(){
+  if(ttsIndex >= ttsUtterances.length){ document.getElementById('ttsStatus').innerHTML=''; return; }
+  const u = ttsUtterances[ttsIndex];
+  u.onend = ()=>{ ttsIndex++; playNextUtterance(); };
+  speechSynthesis.speak(u);
+}
+function ttsPause(){ if(window.speechSynthesis) speechSynthesis.pause(); }
+function ttsResume(){ if(window.speechSynthesis) speechSynthesis.resume(); }
+function ttsStop(){ if(window.speechSynthesis){ speechSynthesis.cancel(); ttsUtterances=[]; ttsIndex=0; document.getElementById('ttsStatus').innerHTML=''; } }
+
+/* ================= ASK AI ABOUT THIS MEETING ================= */
+function renderQAHistory(){
+  const wrap = document.getElementById('qaHistory');
+  if(!wrap || !draft) return;
+  const hist = draft.qaHistory||[];
+  wrap.innerHTML = hist.map(h=>`
+    <div style="margin-bottom:10px;">
+      <div style="font-weight:600;">${escapeHtml(h.q)}</div>
+      <div style="color:var(--muted);">${escapeHtml(h.a)}</div>
+    </div>`).join('');
+}
+async function askAboutMeeting(){
+  const input = document.getElementById('qaInput');
+  const q = input.value.trim();
+  if(!q) return;
+  syncDraftFromForm();
+  input.value = '';
+  const wrap = document.getElementById('qaHistory');
+  wrap.innerHTML += `<div class="msg"><span class="spinner"></span>Thinking…</div>`;
+  try{
+    const sys = `Answer questions about a meeting using ONLY the JSON minutes content given to you. If the answer is not clearly stated in the record, reply exactly: "This is not clearly stated in the meeting record." Where possible, name the relevant agenda item. Keep answers concise (1-4 sentences). Do not invent anything.`;
+    const context = JSON.stringify({
+      details: draft.details, agendaItems: draft.agendaItems, actionPoints: draft.actionPoints,
+      pendingMatters: draft.pendingMatters, executiveSummary: draft.executiveSummary
+    });
+    const a = await callClaude(sys, `Meeting record:\n${context}\n\nQuestion: ${q}`, 500);
+    draft.qaHistory = draft.qaHistory||[];
+    draft.qaHistory.push({q, a: a.trim()});
+  }catch(err){
+    draft.qaHistory = draft.qaHistory||[];
+    draft.qaHistory.push({q, a: 'Error: '+err.message});
+  }
+  renderQAHistory();
+}
+
+/* ---------- init ---------- */
+function renderAll(){ renderHome(); }
+window.onload = function(){
+  if(SETTINGS.org) document.getElementById('orgNameDisplay').textContent = SETTINGS.org;
+  renderHome();
+  if(window.speechSynthesis) speechSynthesis.onvoiceschanged = populateVoiceList;
+};
+</script>
+</body>
+</html>
