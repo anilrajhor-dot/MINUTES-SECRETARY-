@@ -366,9 +366,34 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
 <section id="screen-settings" class="hidden">
   <div class="section">
     <h2>AI configuration</h2>
-    <div class="caption">Your API key is stored only in this browser (localStorage) and sent directly to Anthropic when generating minutes. It is never sent anywhere else. Clear it any time below.</div>
-    <div class="field"><label>Anthropic API key</label><input type="password" id="setApiKey" placeholder="sk-ant-..."></div>
-    <div class="field"><label>Model</label><input type="text" id="setModel" value="claude-sonnet-4-5"></div>
+    <div class="field"><label>AI provider</label>
+      <select id="setProvider" onchange="toggleProviderFields()">
+        <option value="anthropic">Your own Anthropic API key</option>
+        <option value="puter">Free — no key needed (Puter.js)</option>
+      </select>
+    </div>
+
+    <div id="providerAnthropic">
+      <div class="caption">Your API key is stored only in this browser (localStorage) and sent directly to Anthropic when generating minutes. It is never sent anywhere else.</div>
+      <div class="field"><label>Anthropic API key</label><input type="password" id="setApiKey" placeholder="sk-ant-..."></div>
+      <div class="field"><label>Model</label><input type="text" id="setModel" value="claude-sonnet-4-5"></div>
+    </div>
+
+    <div id="providerPuter" class="hidden">
+      <div class="caption">Free, no signup with Anthropic needed — runs through Puter.js, which loads its own small script from js.puter.com the first time you use it. The first request may open a one-time Puter sign-in popup (free account, no card); after that it just works. Quality and speed vary by model and are outside this app's control.</div>
+      <div class="field"><label>Model</label>
+        <select id="setPuterModel">
+          <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (recommended)</option>
+          <option value="claude-opus-4-7">Claude Opus 4.7 (highest quality, slower)</option>
+          <option value="anthropic/claude-3-haiku">Claude 3 Haiku (fastest)</option>
+          <option value="openai/gpt-5">GPT-5</option>
+          <option value="gpt-5-nano">GPT-5 Nano (default/lightest)</option>
+          <option value="custom">Custom model ID…</option>
+        </select>
+      </div>
+      <div class="field hidden" id="puterCustomWrap"><label>Custom Puter model ID</label><input type="text" id="setPuterModelCustom" placeholder="e.g. google/gemini-2.5-pro"></div>
+    </div>
+
     <div class="field"><label>Default organisation name</label><input type="text" id="setOrg"></div>
     <div class="field"><label>Default meeting template</label>
       <select id="setTemplate">
@@ -382,7 +407,7 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
   </div>
   <div class="section">
     <h2>Data</h2>
-    <p class="caption">All meetings, transcripts, and settings are stored only on this device. Nothing is uploaded except the text sent to Anthropic when you click Generate or Run AI check.</p>
+    <p class="caption">All meetings, transcripts, and settings are stored only on this device. Nothing is uploaded except the text sent to your chosen AI provider when you click Generate or Run AI check.</p>
     <button class="btn outline" onclick="if(confirm('Delete ALL saved meetings on this device? This cannot be undone.')){localStorage.removeItem('mb_meetings');renderAll();alert('All meetings deleted.');}">Delete all meetings</button>
   </div>
 </section>
@@ -424,16 +449,42 @@ function startNew(mode){
 }
 
 /* ---------- settings ---------- */
+function toggleProviderFields(){
+  const p = document.getElementById('setProvider').value;
+  document.getElementById('providerAnthropic').classList.toggle('hidden', p!=='anthropic');
+  document.getElementById('providerPuter').classList.toggle('hidden', p!=='puter');
+}
+document.addEventListener('change', (e)=>{
+  if(e.target && e.target.id==='setPuterModel'){
+    document.getElementById('puterCustomWrap').classList.toggle('hidden', e.target.value!=='custom');
+  }
+});
 function loadSettingsForm(){
+  document.getElementById('setProvider').value = SETTINGS.provider || 'anthropic';
   document.getElementById('setApiKey').value = SETTINGS.apiKey||'';
   document.getElementById('setModel').value = SETTINGS.model||'claude-sonnet-4-5';
+  const knownPuterModels = ['claude-sonnet-4-6','claude-opus-4-7','anthropic/claude-3-haiku','openai/gpt-5','gpt-5-nano'];
+  const pm = SETTINGS.puterModel || 'claude-sonnet-4-6';
+  if(knownPuterModels.includes(pm)){
+    document.getElementById('setPuterModel').value = pm;
+    document.getElementById('puterCustomWrap').classList.add('hidden');
+  }else{
+    document.getElementById('setPuterModel').value = 'custom';
+    document.getElementById('setPuterModelCustom').value = pm;
+    document.getElementById('puterCustomWrap').classList.remove('hidden');
+  }
   document.getElementById('setOrg').value = SETTINGS.org||'';
   document.getElementById('setTemplate').value = SETTINGS.template||'Board Meeting';
+  toggleProviderFields();
 }
 function saveSettings(){
+  const puterModelSel = document.getElementById('setPuterModel').value;
+  const puterModel = puterModelSel==='custom' ? (document.getElementById('setPuterModelCustom').value.trim()||'claude-sonnet-4-6') : puterModelSel;
   SETTINGS = {
+    provider: document.getElementById('setProvider').value,
     apiKey: document.getElementById('setApiKey').value.trim(),
     model: document.getElementById('setModel').value.trim() || 'claude-sonnet-4-5',
+    puterModel,
     org: document.getElementById('setOrg').value.trim(),
     template: document.getElementById('setTemplate').value
   };
@@ -441,9 +492,44 @@ function saveSettings(){
   document.getElementById('setMsg').innerHTML = '<div class="msg ok">Settings saved.</div>';
 }
 
-/* ---------- Claude API ---------- */
+/* ---------- Puter.js loader (free provider) ---------- */
+let puterLoadPromise = null;
+function loadPuter(){
+  if(window.puter) return Promise.resolve();
+  if(puterLoadPromise) return puterLoadPromise;
+  puterLoadPromise = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://js.puter.com/v2/';
+    s.onload = ()=>resolve();
+    s.onerror = ()=>reject(new Error('Could not load the free AI provider (Puter.js) — check your internet connection.'));
+    document.head.appendChild(s);
+  });
+  return puterLoadPromise;
+}
+function extractPuterText(res){
+  if(typeof res === 'string') return res;
+  if(res && res.message){
+    const c = res.message.content;
+    if(typeof c === 'string') return c;
+    if(Array.isArray(c)) return c.map(b=> typeof b==='string' ? b : (b.text||'')).join('');
+  }
+  if(res && typeof res.text === 'string') return res.text;
+  if(res && typeof res.toString==='function') return res.toString();
+  return '';
+}
+
+/* ---------- Claude / AI API ---------- */
 async function callClaude(system, userText, maxTokens){
-  if(!SETTINGS.apiKey){ throw new Error('Add your Anthropic API key in Settings first.'); }
+  if((SETTINGS.provider||'anthropic') === 'puter'){
+    await loadPuter();
+    const model = SETTINGS.puterModel || 'claude-sonnet-4-6';
+    const messages = [{role:'system', content: system}, {role:'user', content: userText}];
+    const res = await puter.ai.chat(messages, false, {model, max_tokens: maxTokens||4000});
+    const text = extractPuterText(res);
+    if(!text) throw new Error('No response text from the free provider — try again, or switch model in Settings.');
+    return text;
+  }
+  if(!SETTINGS.apiKey){ throw new Error('Add your Anthropic API key in Settings first — or switch to the free provider in Settings.'); }
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method:'POST',
     headers:{
