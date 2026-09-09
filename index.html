@@ -2203,11 +2203,16 @@ async function extractViaAI(file, mediaType){
   if(navigator.onLine === false) throw new Error('No internet connection — extracting text from images/PDFs needs to be online.');
   if((SETTINGS.provider||'anthropic') === 'puter'){
     await loadPuter();
+    // Puter needs a signed-in session for OCR; force that *before* the OCR call itself,
+    // synchronously enough after the user's tap that Safari won't block the sign-in popup.
+    try{ if(puter.auth && !(await puter.auth.isSignedIn())) await puter.auth.signIn(); }catch(e){ /* continue anyway — signIn() will be retried implicitly by the API call */ }
+    let err1, err2;
     // Dedicated free OCR endpoint — works regardless of which chat model is selected in Settings.
     try{
       const text = await puter.ai.img2txt(file);
       if(text && text.trim()) return text;
-    }catch(e){ /* fall through to vision-chat fallback below */ }
+      err1 = 'returned empty text';
+    }catch(e){ err1 = (e && (e.message||e.error||JSON.stringify(e))) || 'unknown error'; }
     // Fallback: some file types (e.g. certain PDFs) may need the chat-vision path instead.
     try{
       const base64 = await fileToBase64(file);
@@ -2216,8 +2221,9 @@ async function extractViaAI(file, mediaType){
       const res = await puter.ai.chat(EXTRACTION_INSTRUCTIONS, dataUrl, false, {model});
       const text2 = extractPuterText(res);
       if(text2 && text2.trim()) return text2;
-    }catch(e){ /* fall through to error below */ }
-    throw new Error('Could not extract text from this file with the free provider. Try again, try a different file, or switch to your own Anthropic API key in Settings.');
+      err2 = 'returned empty text';
+    }catch(e){ err2 = (e && (e.message||e.error||JSON.stringify(e))) || 'unknown error'; }
+    throw new Error(`Could not extract text with the free provider (OCR: ${err1}; vision fallback: ${err2}). If a Puter sign-in popup appeared and got blocked, allow popups for this site and try again — otherwise try a different file, or switch to your own Anthropic API key in Settings.`);
   }
   if(!SETTINGS.apiKey) throw new Error('Add your Anthropic API key in Settings first — or switch to the free provider.');
   const base64 = await fileToBase64(file);
