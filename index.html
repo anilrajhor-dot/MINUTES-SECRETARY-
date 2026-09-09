@@ -113,6 +113,7 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
   <button data-tab="home" class="active" onclick="showScreen('home')">Home</button>
   <button data-tab="new" onclick="showScreen('new')">New Meeting</button>
   <button data-tab="review" onclick="showScreen('review')">Review &amp; Export</button>
+  <button data-tab="share" onclick="showScreen('share')">Share &amp; Print</button>
   <button data-tab="library" onclick="showScreen('library')">Meeting Library</button>
   <button data-tab="tracker" onclick="showScreen('tracker')">Action Tracker</button>
   <button data-tab="insights" onclick="showScreen('insights')">Insights</button>
@@ -153,8 +154,8 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
       <small>Live, in-browser</small>
     </div>
     <div class="home-tile" onclick="showScreen('record');switchRecordTab('upload')">
-      <span class="glyph">📁</span>Upload Recording
-      <small>Attach audio/video</small>
+      <span class="glyph">📁</span>Upload Material
+      <small>File, photo, or gallery</small>
     </div>
   </div>
 
@@ -236,7 +237,13 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     <h2>Meeting content</h2>
     <div class="caption">Hindi, English, and Hinglish mixed together are all fine — meaning is preserved, not translated, unless you choose Hindi or Bilingual above.</div>
     <div class="field"><textarea id="mInput" rows="10" placeholder="Paste transcript or type quick notes here, e.g. 'Recovery ka performance satisfactory nahi hai. GM said all branches should review overdue accounts every Monday...'"></textarea></div>
-    <div id="genMsg"></div>
+
+    <label>Attach material (photos of notes/agenda papers, scanned pages, PDFs)</label>
+    <div class="caption">Choose from your device's file browser or photo gallery/camera. Text is extracted automatically using AI — review it, then insert into the notes above.</div>
+    <input type="file" id="materialFile" accept="image/*,.pdf,.doc,.docx,.txt" multiple onchange="handleMaterialFiles(event)">
+    <div id="materialList" style="margin-top:10px;"></div>
+
+    <div id="genMsg" style="margin-top:14px;"></div>
     <button class="btn" id="genBtn" onclick="generateMinutes()">Generate minutes</button>
   </div>
 </section>
@@ -270,17 +277,26 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     </div>
 
     <div id="recUploadPanel" class="hidden">
-      <h2>Upload recording</h2>
-      <div class="caption">Attaches the file to your library, then transcribes it with AI — including speaker labels and timestamps where the audio allows.</div>
-      <input type="file" id="upFile" accept="audio/*,video/*" onchange="handleUploadFile(event)">
+      <h2>Upload material</h2>
+      <div class="caption">Audio, video, photos (from camera or gallery), PDFs, Word (.docx) or text files — the app extracts text automatically, using AI for audio, images and PDFs.</div>
+      <input type="file" id="upFile" accept="audio/*,video/*,image/*,.pdf,.doc,.docx,.txt" onchange="handleUploadFile(event)">
       <div id="upStatus" class="caption"></div>
-      <div class="actions-toolbar hidden" id="upControls">
+
+      <div class="actions-toolbar hidden" id="upControlsAudio">
         <audio id="upAudio" controls style="max-width:100%;"></audio>
         <button class="btn secondary" onclick="aiTranscribeUpload()">🎯 Transcribe with AI (speaker ID + timestamps)</button>
         <button class="btn outline small" onclick="playAndTryTranscribe()">Or try browser live-transcribe instead</button>
         <input type="text" id="upName" placeholder="Recording name (optional)" style="max-width:260px;">
         <button class="btn" onclick="saveUploadedRecording()">Save to library</button>
       </div>
+
+      <div class="actions-toolbar hidden" id="upControlsDoc">
+        <img id="upImagePreview" class="hidden" style="max-width:220px;max-height:220px;border:1px solid var(--border);">
+        <button class="btn secondary" onclick="extractUploadedDocument()">📄 Extract text with AI</button>
+        <input type="text" id="upDocName" placeholder="Name (optional)" style="max-width:260px;">
+        <button class="btn" onclick="saveUploadedDocument()">Save to library</button>
+      </div>
+
       <div style="margin-top:10px;"><a href="#" onclick="showScreen('new');return false;">Or just paste the transcript directly →</a></div>
     </div>
   </div>
@@ -326,10 +342,12 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
 
     <div class="section">
       <h2>Action point register</h2>
+      <div style="overflow-x:auto;">
       <table id="actionTable">
         <thead><tr><th>#</th><th>Agenda / subject</th><th>Action required</th><th>Responsible</th><th>Deadline</th><th>Priority</th><th>Status</th><th>Remarks</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
+      </div>
       <button class="btn small secondary" style="margin-top:10px;" onclick="addActionRow()">+ Add action point</button>
     </div>
 
@@ -339,9 +357,22 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     </div>
 
     <div class="section no-print">
+      <h2>Attached material</h2>
+      <div class="caption">Photos, scans, and papers attached to this meeting.</div>
+      <input type="file" id="materialFileReview" accept="image/*,.pdf,.doc,.docx,.txt" multiple onchange="handleMaterialFilesReview(event)">
+      <div id="materialListReview" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="section no-print">
       <h2>Listen to minutes</h2>
       <div class="rowtools" style="margin-bottom:10px;flex-wrap:wrap;">
-        <select id="ttsScope"><option value="full">Full minutes</option><option value="exec">Executive summary only</option></select>
+        <select id="ttsScope">
+          <option value="full">Full minutes</option>
+          <option value="exec">Executive summary only</option>
+          <option value="decisions">Decisions only</option>
+          <option value="actions">Action points only</option>
+          <option value="pending">Pending matters only</option>
+        </select>
         <select id="ttsVoice"></select>
         <select id="ttsSpeed"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
         <button class="btn small secondary" onclick="ttsPlay()">▶ Play</button>
@@ -375,15 +406,38 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
         <button class="btn" onclick="saveMeeting()">Save meeting</button>
         <button class="btn secondary" onclick="exportWord()">Export Word (.doc)</button>
         <button class="btn secondary" onclick="exportExcel()">Export Excel (.xlsx)</button>
-        <button class="btn secondary" onclick="window.print()">Export / Print PDF</button>
-        <button class="btn outline" onclick="copyPlainText()">Copy to clipboard</button>
-        <button class="btn outline" onclick="shareMinutes()">Share</button>
       </div>
       <div class="actions-toolbar">
         <button class="btn outline" onclick="deleteTranscriptForDraft()">Delete transcript</button>
         <button class="btn outline" onclick="deleteMeetingFromReview()">Delete meeting</button>
       </div>
       <div id="saveMsg"></div>
+      <div style="margin-top:10px;"><a href="#" onclick="showScreen('share');return false;">Share or print these minutes →</a></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SHARE & PRINT ============ -->
+<section id="screen-share" class="hidden">
+  <div id="shareEmpty" class="section"><p>No meeting open. Open one from the <a href="#" onclick="showScreen('library');return false;">Library</a> or generate one from <a href="#" onclick="showScreen('new');return false;">New Meeting</a>.</p></div>
+  <div id="shareBody" class="hidden">
+    <div class="section">
+      <h2>Print</h2>
+      <div class="caption">Uses your device's print dialog — choose "Save as PDF" there for a PDF file.</div>
+      <button class="btn secondary" onclick="printMinutes()">🖨 Print / Save as PDF</button>
+    </div>
+
+    <div class="section">
+      <h2>Share</h2>
+      <div class="caption">Share the minutes as text, or share the Word document file directly to any app that accepts files (where your browser supports it).</div>
+      <div class="actions-toolbar">
+        <button class="btn secondary" onclick="shareViaWhatsApp()">🟢 WhatsApp</button>
+        <button class="btn secondary" onclick="shareViaEmail()">✉️ Email</button>
+        <button class="btn secondary" onclick="shareFileNatively()">📎 Share Word file</button>
+        <button class="btn secondary" onclick="shareMinutes()">📤 Share (text, any app)</button>
+        <button class="btn outline" onclick="copyPlainText()">Copy to clipboard</button>
+      </div>
+      <div id="shareMsg"></div>
     </div>
   </div>
 </section>
@@ -416,10 +470,12 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
         <option>Deferred</option><option>Closed</option><option>Pending clarification</option>
       </select>
     </div>
+    <div style="overflow-x:auto;">
     <table>
       <thead><tr><th>Meeting</th><th>Subject</th><th>Action</th><th>Responsible</th><th>Deadline</th><th>Status</th><th></th></tr></thead>
       <tbody id="trackerBody"></tbody>
     </table>
+    </div>
     <div class="actions-toolbar"><button class="btn secondary" onclick="exportTracker()">Export tracker (.xlsx)</button></div>
   </div>
 </section>
@@ -562,6 +618,7 @@ function showScreen(name){
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   if(name==='home') renderHome();
   if(name==='review'){ renderReview(); populateVoiceList(); renderQAHistory(); }
+  if(name==='share') renderShareScreen();
   if(name==='library') renderLibrary();
   if(name==='tracker') renderTracker();
   if(name==='insights') renderInsights();
@@ -578,6 +635,104 @@ function startNew(mode){
   if(SETTINGS.template) document.getElementById('mType').value = SETTINGS.template;
   toggleTypeFields();
   populatePrevMeetingSelect();
+  attachedMaterials = [];
+  renderMaterialList();
+}
+
+/* ---------- attach material (photos/PDFs/text — free AI OCR via Puter) ---------- */
+let attachedMaterials = [];
+function handleMaterialFiles(event){
+  const files = Array.from(event.target.files||[]);
+  files.forEach(f=>{
+    const item = {id: uid(), name:f.name, file:f, text:'', status:'extracting'};
+    attachedMaterials.push(item);
+    extractMaterialText(item).then(()=>renderMaterialList());
+  });
+  renderMaterialList();
+  event.target.value = '';
+}
+async function extractMaterialText(item){
+  try{
+    item.text = await extractTextFromFile(item.file);
+    item.status = 'done';
+  }catch(err){
+    item.status = 'error';
+    item.error = (err && err.message) || 'Text extraction failed.';
+  }
+}
+function renderMaterialList(){
+  const wrap = document.getElementById('materialList');
+  if(!wrap) return;
+  wrap.innerHTML = attachedMaterials.map(item=>`
+    <div style="border:1px solid var(--border);padding:10px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <strong>${escapeHtml(item.name)}</strong>
+        <div class="rowtools">
+          ${item.status==='done' ? `<button class="btn small secondary" onclick="insertMaterialText('${item.id}')">Insert into notes</button>` : ''}
+          <button class="btn small outline" onclick="removeMaterial('${item.id}')">Remove</button>
+        </div>
+      </div>
+      ${item.status==='extracting' ? '<div class="caption"><span class="spinner"></span>Extracting text…</div>' : ''}
+      ${item.status==='error' ? `<div class="msg error">${escapeHtml(item.error)}</div>` : ''}
+      ${item.status==='done' ? `<textarea rows="3" oninput="updateMaterialText('${item.id}', this.value)">${escapeHtml(item.text)}</textarea>` : ''}
+    </div>`).join('');
+}
+function updateMaterialText(id, value){ const m = attachedMaterials.find(x=>x.id===id); if(m) m.text = value; }
+function removeMaterial(id){ attachedMaterials = attachedMaterials.filter(x=>x.id!==id); renderMaterialList(); }
+function insertMaterialText(id){
+  const m = attachedMaterials.find(x=>x.id===id);
+  if(!m) return;
+  const ta = document.getElementById('mInput');
+  ta.value = (ta.value ? ta.value+'\n\n' : '') + `--- From: ${m.name} ---\n` + m.text;
+  scheduleAutosave();
+  showToast('Inserted into notes.', 'ok');
+}
+async function persistMaterialsToMeeting(meetingId){
+  for(const item of attachedMaterials){
+    const rec = {id:item.id, type:'material', meetingId, name:item.name, blob:item.file, extractedText:item.text||'', createdAt:new Date().toISOString()};
+    await dbPut(rec);
+  }
+  attachedMaterials = [];
+}
+
+/* ---------- attach material from the Review screen (post-generation) ---------- */
+async function handleMaterialFilesReview(event){
+  const files = Array.from(event.target.files||[]);
+  const wrap = document.getElementById('materialListReview');
+  if(wrap) wrap.innerHTML += '<div class="caption"><span class="spinner"></span>Extracting text…</div>';
+  for(const f of files){
+    const item = {id: uid(), name:f.name, file:f};
+    await extractMaterialText(item);
+    await dbPut({id:item.id, type:'material', meetingId: draft.id, name:item.name, blob:f, extractedText:item.text||'', createdAt:new Date().toISOString()});
+  }
+  event.target.value = '';
+  renderMaterialListReview();
+}
+async function renderMaterialListReview(){
+  const wrap = document.getElementById('materialListReview');
+  if(!wrap || !draft) return;
+  const all = await dbGetAll();
+  const items = all.filter(x=>x.type==='material' && x.meetingId===draft.id);
+  wrap.innerHTML = items.length ? items.map(it=>`
+    <div style="border:1px solid var(--border);padding:8px 10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <div><strong>${escapeHtml(it.name)}</strong>${it.extractedText?'<div class="caption" style="margin:0;">Text was extracted from this file.</div>':''}</div>
+      <div class="rowtools">
+        <button class="btn small secondary" onclick="viewMaterial('${it.id}')">View</button>
+        <button class="btn small outline" onclick="deleteMaterial('${it.id}')">Delete</button>
+      </div>
+    </div>`).join('') : '<p class="caption">No material attached yet.</p>';
+}
+async function viewMaterial(id){
+  const all = await dbGetAll();
+  const it = all.find(x=>x.id===id);
+  if(!it) return;
+  const url = URL.createObjectURL(it.blob);
+  window.open(url, '_blank');
+}
+async function deleteMaterial(id){
+  if(!confirm('Delete this attached material?')) return;
+  await dbDelete(id);
+  renderMaterialListReview();
 }
 
 /* ---------- SHG/VO/CLF + quorum field toggling ---------- */
@@ -870,6 +1025,7 @@ Return JSON with this exact shape:
       rawInput: input,
       qaHistory: []
     };
+    if(attachedMaterials.length) await persistMaterialsToMeeting(draft.id);
     unsavedChanges = true;
     doAutosave();
     msg.innerHTML = '<div class="msg ok">Draft ready. Opening review screen…</div>';
@@ -937,6 +1093,7 @@ function renderReview(){
   renderActionTable();
   renderQuorumBadge();
   loadConfirmationUI();
+  renderMaterialListReview();
   document.getElementById('aiCheckResults').innerHTML = '';
   document.getElementById('saveMsg').innerHTML = '';
 }
@@ -1035,9 +1192,21 @@ function renderActionTable(){
       <td><select oninput="draft.actionPoints[${i}].priority=this.value">${['High','Medium','Low'].map(p=>`<option ${a.priority===p?'selected':''}>${p}</option>`).join('')}</select></td>
       <td><select oninput="draft.actionPoints[${i}].status=this.value">${['Open','In Progress','Completed','Deferred','Closed','Pending clarification'].map(s=>`<option ${a.status===s?'selected':''}>${s}</option>`).join('')}</select></td>
       <td><input type="text" value="${escapeHtml(a.remarks)}" oninput="draft.actionPoints[${i}].remarks=this.value"></td>
-      <td><button class="btn small outline" onclick="removeActionRow(${i})">✕</button></td>`;
+      <td><button class="btn small outline" onclick="speakOne('${escapeHtml(a.action).replace(/'/g,"&#39;")}. Responsible: ${escapeHtml(a.responsible).replace(/'/g,"&#39;")}. Deadline: ${escapeHtml(a.deadline).replace(/'/g,"&#39;")}.')" title="Speak this action point">🔊</button> <button class="btn small outline" onclick="removeActionRow(${i})">✕</button></td>`;
     tbody.appendChild(tr);
   });
+}
+function speakOne(text){
+  if(!window.speechSynthesis){ showToast('Speech playback is not supported in this browser.', 'error'); return; }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  const voices = speechSynthesis.getVoices();
+  const voiceSel = document.getElementById('ttsVoice');
+  const voiceIdx = voiceSel ? parseInt(voiceSel.value||'0',10) : 0;
+  if(voices[voiceIdx]) u.voice = voices[voiceIdx];
+  const speedSel = document.getElementById('ttsSpeed');
+  u.rate = speedSel ? parseFloat(speedSel.value||'1') : 1;
+  speechSynthesis.speak(u);
 }
 function normWords(s){ return new Set((s||'').toLowerCase().replace(/[^\w\s]/g,'').split(/\s+/).filter(Boolean)); }
 function jaccard(a,b){ let inter=0; a.forEach(x=>{if(b.has(x))inter++;}); const union=new Set([...a,...b]).size; return union? inter/union : 0; }
@@ -1443,13 +1612,63 @@ function plainTextMinutes(){
 }
 function copyPlainText(){
   navigator.clipboard.writeText(plainTextMinutes()).then(()=>{
-    document.getElementById('saveMsg').innerHTML = '<div class="msg ok">Copied to clipboard.</div>';
-  });
+    showToast('Copied to clipboard.', 'ok');
+  }).catch(()=>{ showToast('Could not copy — your browser may be blocking clipboard access.', 'error'); });
 }
 function shareMinutes(){
   const text = plainTextMinutes();
-  if(navigator.share){ navigator.share({title: draft.details.title||'Minutes', text}); }
+  if(navigator.share){ navigator.share({title: draft.details.title||'Minutes', text}).catch(e=>{ if(e.name!=='AbortError') showToast('Share failed: '+e.message, 'error'); }); }
   else { copyPlainText(); }
+}
+function renderShareScreen(){
+  const empty = document.getElementById('shareEmpty');
+  const body = document.getElementById('shareBody');
+  if(!draft){ empty.classList.remove('hidden'); body.classList.add('hidden'); return; }
+  empty.classList.add('hidden'); body.classList.remove('hidden');
+  document.getElementById('shareMsg').innerHTML = '';
+}
+function printMinutes(){
+  if(!draft){ showToast('No meeting open to print.', 'error'); return; }
+  syncDraftFromForm();
+  let w;
+  try{ w = window.open('', '_blank'); }catch(e){ w = null; }
+  if(!w){ showToast('Could not open the print window — check your browser\'s pop-up blocker, then try again.', 'error'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(draft.details.title||'Minutes')}</title>
+  <style>body{font-family:Georgia,serif;color:#1B2A3D;max-width:800px;margin:24px auto;padding:0 16px;line-height:1.5;} h1,h2,h3{font-family:Georgia,serif;} table{border-collapse:collapse;width:100%;} td,th{border:1px solid #ccc;padding:6px;text-align:left;font-size:.9rem;}</style>
+  </head><body>${buildMinutesHTML()}</body></html>`);
+  w.document.close();
+  const doPrint = ()=>{ try{ w.focus(); w.print(); }catch(e){} };
+  w.onload = doPrint;
+  setTimeout(doPrint, 400);
+}
+function shareViaWhatsApp(){
+  syncDraftFromForm();
+  const summary = draft.executiveSummary || draft.oneMinuteSummary || '(no summary yet — generate minutes first)';
+  const text = `${draft.details.title||draft.details.type||'Meeting Minutes'} — ${draft.details.date||''}\n\n${summary}\n\n(Full minutes available as a separate document.)`;
+  window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+}
+function shareViaEmail(){
+  syncDraftFromForm();
+  const subject = `Minutes: ${draft.details.title||draft.details.type||'Meeting'} — ${draft.details.date||''}`;
+  const body = plainTextMinutes();
+  window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+async function shareFileNatively(){
+  try{
+    syncDraftFromForm();
+    const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset="utf-8"><title>Minutes</title></head><body>${buildMinutesHTML()}</body></html>`;
+    const blob = new Blob(['\ufeff', html], {type:'application/msword'});
+    const filename = (draft.details.title||'minutes').replace(/[^\w-]+/g,'_')+'.doc';
+    const file = new File([blob], filename, {type:'application/msword'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title: draft.details.title||'Minutes'});
+    }else{
+      showToast('This browser can\'t share files directly — downloading the Word file instead so you can share it manually.', 'error');
+      downloadBlob(blob, filename);
+    }
+  }catch(err){
+    if(err.name!=='AbortError') showToast('Could not share the file: '+err.message, 'error');
+  }
 }
 
 /* ================= RECORDING (IndexedDB + MediaRecorder + Web Speech API) ================= */
@@ -1624,36 +1843,45 @@ function useTranscriptInNewMeeting(){
 
 async function renderRecordingsList(){
   const wrap = document.getElementById('recordingsList');
-  const recs = (await dbGetAll()).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-  wrap.innerHTML = recs.length ? recs.map(r=>`
+  const recs = (await dbGetAll()).filter(r=>r.type!=='material').sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  wrap.innerHTML = recs.length ? recs.map(r=>{
+    const isDoc = r.type==='document';
+    const typeLabel = r.type==='live' ? 'Recorded' : (isDoc ? 'Document' : 'Uploaded');
+    return `
     <div style="border:1px solid var(--border);padding:10px 12px;margin-bottom:8px;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <div>
           <input type="text" value="${escapeHtml(r.name)}" style="border:none;font-weight:600;padding:2px 0;" onchange="renameRecording('${r.id}',this.value)">
-          <div class="caption" style="margin:0;">${r.type==='live'?'Recorded':'Uploaded'} · ${fmtTime(r.durationSec||0)} · ${new Date(r.createdAt).toLocaleString()}${r.transcribedMode?' · AI-transcribed ('+(r.transcribedMode==='diarized'?'speaker labels':'timestamps')+')':''}</div>
+          <div class="caption" style="margin:0;">${typeLabel}${isDoc?'':' · '+fmtTime(r.durationSec||0)} · ${new Date(r.createdAt).toLocaleString()}${r.transcribedMode?' · AI-transcribed ('+(r.transcribedMode==='diarized'?'speaker labels':'timestamps')+')':''}</div>
         </div>
         <div class="rowtools">
-          <button class="btn small secondary" onclick="playRecording('${r.id}')">▶ Play</button>
-          <button class="btn small secondary" onclick="transcribeRecordingWithAI('${r.id}')">🎯 AI transcribe</button>
+          ${isDoc ? `<button class="btn small secondary" onclick="downloadRecordingFile('${r.id}')">Download</button>`
+                  : `<button class="btn small secondary" onclick="playRecording('${r.id}')">▶ Play</button>
+                     <button class="btn small secondary" onclick="transcribeRecordingWithAI('${r.id}')">🎯 AI transcribe</button>`}
           ${r.transcript?`<button class="btn small secondary" onclick="loadRecordingTranscript('${r.id}')">Use transcript</button>`:''}
           <button class="btn small outline" onclick="deleteRecordingUI('${r.id}')">Delete</button>
         </div>
       </div>
       <div id="recStatus_${r.id}"></div>
-    </div>`).join('') : '<p class="caption">No recordings saved yet.</p>';
+    </div>`;
+  }).join('') : '<p class="caption">No recordings or documents saved yet.</p>';
 }
 async function renameRecording(id, name){
   const recs = await dbGetAll(); const r = recs.find(x=>x.id===id); if(!r) return;
   r.name = name; await dbPut(r);
 }
 async function deleteRecordingUI(id){
-  if(!confirm('Delete this recording permanently?')) return;
+  if(!confirm('Delete this item permanently?')) return;
   await dbDelete(id); renderRecordingsList();
 }
 async function playRecording(id){
   const recs = await dbGetAll(); const r = recs.find(x=>x.id===id); if(!r) return;
   const url = URL.createObjectURL(r.blob);
   const audio = new Audio(url); audio.play();
+}
+async function downloadRecordingFile(id){
+  const recs = await dbGetAll(); const r = recs.find(x=>x.id===id); if(!r) return;
+  downloadBlob(r.blob, r.name);
 }
 async function loadRecordingTranscript(id){
   const recs = await dbGetAll(); const r = recs.find(x=>x.id===id); if(!r) return;
@@ -1712,15 +1940,39 @@ async function aiTranscribeUpload(){
   }
 }
 
-/* ---------- upload recording ---------- */
+/* ---------- upload material (audio/video/image/pdf/docx/txt) ---------- */
 let uploadedFile = null;
+function fileKind(file){
+  const type = file.type||'', name = file.name||'';
+  if(type.startsWith('audio/') || type.startsWith('video/')) return 'av';
+  if(type.startsWith('image/')) return 'image';
+  if(type==='application/pdf' || /\.pdf$/i.test(name)) return 'pdf';
+  if(/\.docx$/i.test(name) || type.includes('wordprocessingml')) return 'docx';
+  if(/\.doc$/i.test(name)) return 'doc';
+  if(type==='text/plain' || /\.txt$/i.test(name)) return 'txt';
+  return 'other';
+}
 function handleUploadFile(ev){
   uploadedFile = ev.target.files[0];
   if(!uploadedFile) return;
+  const kind = fileKind(uploadedFile);
   document.getElementById('upStatus').innerHTML = '<div class="caption">'+escapeHtml(uploadedFile.name)+' ('+Math.round(uploadedFile.size/1024)+' KB)</div>';
-  const url = URL.createObjectURL(uploadedFile);
-  const audio = document.getElementById('upAudio'); audio.src = url;
-  document.getElementById('upControls').classList.remove('hidden');
+  document.getElementById('upControlsAudio').classList.toggle('hidden', kind!=='av');
+  document.getElementById('upControlsDoc').classList.toggle('hidden', kind==='av');
+  const imgPreview = document.getElementById('upImagePreview');
+  if(kind==='av'){
+    const url = URL.createObjectURL(uploadedFile);
+    document.getElementById('upAudio').src = url;
+    imgPreview.classList.add('hidden');
+  }else if(kind==='image'){
+    imgPreview.src = URL.createObjectURL(uploadedFile);
+    imgPreview.classList.remove('hidden');
+  }else{
+    imgPreview.classList.add('hidden');
+  }
+  if(kind==='other'){
+    document.getElementById('upStatus').innerHTML += '<div class="msg error">Unsupported file type — try an image, PDF, .docx, .txt, or audio/video file.</div>';
+  }
 }
 let uploadRecognizer = null;
 function playAndTryTranscribe(){
@@ -1748,6 +2000,111 @@ async function saveUploadedRecording(){
   renderRecordingsList();
 }
 
+/* ---------- document/image/PDF text extraction ---------- */
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const r = new FileReader();
+    r.onload = ()=> resolve(String(r.result).split(',')[1]);
+    r.onerror = ()=> reject(new Error('Could not read the file.'));
+    r.readAsDataURL(file);
+  });
+}
+let mammothLoadPromise = null;
+function loadMammoth(){
+  if(window.mammoth) return Promise.resolve();
+  if(mammothLoadPromise) return mammothLoadPromise;
+  mammothLoadPromise = new Promise((resolve,reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/mammoth/mammoth.browser.min.js';
+    s.onload = ()=>resolve();
+    s.onerror = ()=>reject(new Error('Could not load the document reader — check your internet connection.'));
+    document.head.appendChild(s);
+  });
+  return mammothLoadPromise;
+}
+const EXTRACTION_INSTRUCTIONS = 'Extract all readable text from this file, preserving structure (headings, lists, tables) as plain text as closely as possible. If it is handwritten meeting notes, transcribe them faithfully without correcting or rephrasing the content — only guess at illegible words in [brackets]. Output only the extracted text, nothing else.';
+async function extractViaAI(file, mediaType){
+  if(navigator.onLine === false) throw new Error('No internet connection — extracting text from images/PDFs needs to be online.');
+  const base64 = await fileToBase64(file);
+  if((SETTINGS.provider||'anthropic') === 'puter'){
+    await loadPuter();
+    const model = SETTINGS.puterModel || 'claude-sonnet-4-6';
+    const dataUrl = `data:${mediaType};base64,${base64}`;
+    let res;
+    try{
+      res = await puter.ai.chat(EXTRACTION_INSTRUCTIONS, dataUrl, false, {model});
+    }catch(e){
+      throw new Error('The free provider could not read this file (not every model supports images/PDFs). Try a different model in Settings, or your own Anthropic API key.');
+    }
+    const text = extractPuterText(res);
+    if(!text) throw new Error('No text could be extracted — the file may be blank, unreadable, or unsupported by this model.');
+    return text;
+  }
+  if(!SETTINGS.apiKey) throw new Error('Add your Anthropic API key in Settings first — or switch to the free provider.');
+  const contentBlock = mediaType==='application/pdf'
+    ? {type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}}
+    : {type:'image', source:{type:'base64', media_type:mediaType, data:base64}};
+  let res;
+  try{
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':SETTINGS.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({
+        model: SETTINGS.model || 'claude-sonnet-4-5',
+        max_tokens: 4000,
+        messages: [{role:'user', content:[contentBlock, {type:'text', text: EXTRACTION_INSTRUCTIONS}]}]
+      })
+    });
+  }catch(e){ throw new Error('Could not reach Anthropic — check your internet connection.'); }
+  if(!res.ok){
+    let t=''; try{ t = (await res.text()).slice(0,200); }catch(e){}
+    throw new Error('API error ('+res.status+')'+(t?': '+t:''));
+  }
+  const data = await res.json();
+  const block = (data.content||[]).find(b=>b.type==='text');
+  if(!block) throw new Error('No text returned.');
+  return block.text;
+}
+async function extractTextFromFile(file){
+  const kind = fileKind(file);
+  if(kind==='txt') return await file.text();
+  if(kind==='docx'){
+    await loadMammoth();
+    const buf = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({arrayBuffer: buf});
+    return result.value;
+  }
+  if(kind==='doc') throw new Error('Old-format .doc files aren\'t supported — please save it as .docx, or paste the text directly.');
+  if(kind==='pdf') return await extractViaAI(file, 'application/pdf');
+  if(kind==='image') return await extractViaAI(file, file.type||'image/jpeg');
+  throw new Error('Unsupported file type. Try an image, PDF, .docx, .txt, or audio/video file.');
+}
+async function extractUploadedDocument(){
+  if(!uploadedFile){ alert('Choose a file first.'); return; }
+  document.getElementById('upStatus').innerHTML = '<div class="caption"><span class="spinner"></span>Extracting text…</div>';
+  try{
+    const text = await extractTextFromFile(uploadedFile);
+    document.getElementById('upStatus').innerHTML = `<div class="msg ok">Text extracted.</div><textarea rows="8" id="upTranscriptDraft">${escapeHtml(text)}</textarea>
+      <div class="actions-toolbar" style="margin-top:8px;"><button class="btn secondary" onclick="useExtractedTextInNewMeeting()">Use this text in a new meeting</button></div>`;
+  }catch(err){
+    document.getElementById('upStatus').innerHTML = '<div class="msg error">'+escapeHtml(err.message)+'</div>';
+  }
+}
+function useExtractedTextInNewMeeting(){
+  const t = document.getElementById('upTranscriptDraft');
+  showScreen('new');
+  document.getElementById('mInput').value = t ? t.value : '';
+}
+async function saveUploadedDocument(){
+  if(!uploadedFile){ alert('Choose a file first.'); return; }
+  const name = document.getElementById('upDocName').value.trim() || uploadedFile.name;
+  const transcriptEl = document.getElementById('upTranscriptDraft');
+  const rec = {id: uid(), name, createdAt: new Date().toISOString(), durationSec: 0, blob: uploadedFile, transcript: transcriptEl?transcriptEl.value:'', type:'document'};
+  await dbPut(rec);
+  document.getElementById('upStatus').innerHTML = '<div class="msg ok">Saved to your library.</div>';
+  renderRecordingsList();
+}
+
 /* ================= TEXT-TO-SPEECH ================= */
 function populateVoiceList(){
   const sel = document.getElementById('ttsVoice');
@@ -1760,12 +2117,28 @@ function populateVoiceList(){
   if(idx>=0) sel.value = idx;
 }
 let ttsUtterances = [], ttsIndex = 0;
+function textForTtsScope(scope){
+  if(scope==='exec') return draft.executiveSummary||'';
+  if(scope==='decisions'){
+    const decisions = (draft.agendaItems||[]).filter(a=>tagClass(a.type)==='decision');
+    return decisions.length ? decisions.map(a=>`${a.heading}. ${a.decisionText}`).join('\n\n') : 'No specific decisions recorded.';
+  }
+  if(scope==='actions'){
+    const pts = draft.actionPoints||[];
+    return pts.length ? pts.map((a,i)=>`Action ${i+1}. ${a.action}. Responsible: ${a.responsible}. Deadline: ${a.deadline}. Status: ${a.status}.`).join('\n\n') : 'No action points recorded.';
+  }
+  if(scope==='pending'){
+    const p = draft.pendingMatters||[];
+    return p.length ? p.join('\n\n') : 'No pending matters recorded.';
+  }
+  return plainTextMinutes();
+}
 function ttsPlay(){
   if(!window.speechSynthesis){ document.getElementById('ttsStatus').innerHTML='<div class="msg error">Speech synthesis not supported in this browser.</div>'; return; }
   speechSynthesis.cancel();
   syncDraftFromForm();
   const scope = document.getElementById('ttsScope').value;
-  const text = scope==='exec' ? (draft.executiveSummary||'') : plainTextMinutes();
+  const text = textForTtsScope(scope);
   const chunks = text.split(/\n\n+/).filter(s=>s.trim());
   const voices = speechSynthesis.getVoices();
   const voiceIdx = parseInt(document.getElementById('ttsVoice').value||'0',10);
