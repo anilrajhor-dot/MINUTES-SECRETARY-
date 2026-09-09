@@ -246,9 +246,10 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     <div id="genMsg" style="margin-top:14px;"></div>
     <div class="actions-toolbar">
       <button class="btn" id="genBtn" onclick="generateMinutes()">Generate minutes with AI</button>
+      <button class="btn secondary" onclick="startRuleBasedMinutes()">Auto-structure without AI (offline)</button>
       <button class="btn outline" onclick="startManualMinutes()">Skip AI — enter minutes manually</button>
     </div>
-    <div class="caption">"Generate minutes with AI" sends your notes to your chosen AI provider (set in Settings). "Skip AI" keeps everything on this device — it opens a blank Review screen for you to fill in by hand, and nothing is sent anywhere unless you separately use Attach Material's text extraction, AI Check, or Ask AI.</div>
+    <div class="caption">"Generate minutes with AI" sends your notes to your chosen AI provider (set in Settings). "Auto-structure without AI" runs entirely on this device using keyword/pattern matching — it's rougher: agenda headings and decisions are pulled as-is from your own sentences (nothing reworded or polished), and action-point detection is approximate, so expect to tidy it up. "Skip AI" opens a blank Review screen for you to fill in by hand. Only the first option sends anything anywhere.</div>
   </div>
 </section>
 
@@ -968,6 +969,134 @@ async function startManualMinutes(){
   doAutosave();
   showScreen('review');
   showToast('Blank minutes ready to fill in — nothing was sent anywhere.', 'ok');
+}
+
+/* ================= OFFLINE, RULE-BASED STRUCTURING (no AI, no network) =================
+   Keyword/pattern matching only. Sentences are lifted as-is from the notes — nothing is
+   reworded, summarised, or invented. Deliberately approximate; the point is that nothing
+   leaves the device, not that it matches AI-quality classification. */
+const DECISION_CUES = ['decided','approved','resolved','sanctioned','directed','advised','ratified','confirmed the','it was resolved',
+  'board approved','the board directed','the board advised','faisla liya','faisla kiya','manzoori','swikriti','nirdesh diya','tay kiya','tay hua','sweekar kiya'];
+const DEFERRED_CUES = ['deferred','postponed','next meeting','agli meeting mein','baad mein dekhenge','abhi taala'];
+const NOTED_CUES = ['noted','took note','note kiya','dhyan diya','no specific decision'];
+const PENDING_CUES = ['pending','awaiting','not yet decided','yet to be','still waiting','baaki hai','abhi tak nahi','wait for','waiting for','abhi tak pending'];
+const ACTION_CUES = ['will ','shall ','should ','to submit','to complete','responsible for','needs to','has to','is required to','must ',
+  'karega','karegi','karenge','karna hai','karni hai','submit karna','dekhna hai','review karna','banayega','taiyar karega','provide karega','complete karna','karenge','karvana hai'];
+const DEADLINE_PATTERNS = [
+  /\bby\s+([A-Za-z0-9 ,]+?)(?=[.,;]|$)/i,
+  /\bwithin\s+([A-Za-z0-9 ]+?)(?=[.,;]|$)/i,
+  /\bbefore\s+([A-Za-z0-9 ]+?)(?=[.,;]|$)/i,
+  /\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|meeting)/i,
+  /(\d+)\s*(din|hafte|mahine)\s*(mein|me)?/i,
+  /agle\s+(\S+\s+)?(din|hafte|mahine)/i
+];
+function splitSentences(text){
+  return (text||'').split(/(?:\r?\n)+|(?<=[.!?])\s+/).map(s=>s.trim()).filter(s=>s.length>3);
+}
+function splitParagraphs(text){
+  let paras = (text||'').split(/\n\s*\n+/).map(s=>s.trim()).filter(Boolean);
+  if(paras.length<=1){
+    const alt = text.split(/(?:^|\n)\s*\d+[\.\)]\s+/).map(s=>s.trim()).filter(Boolean);
+    if(alt.length>1) paras = alt;
+  }
+  if(paras.length<=1){
+    const sentences = splitSentences(text);
+    paras = [];
+    for(let i=0;i<sentences.length;i+=3) paras.push(sentences.slice(i,i+3).join(' '));
+  }
+  return paras.length ? paras : [text.trim()].filter(Boolean);
+}
+function extractHeading(p){
+  const colonMatch = p.match(/^([^.:\n]{3,60}):/);
+  if(colonMatch) return colonMatch[1].trim();
+  const words = p.split(/\s+/);
+  return words.slice(0,8).join(' ') + (words.length>8 ? '…' : '');
+}
+function classifyParaType(p){
+  const lower = p.toLowerCase();
+  if(DEFERRED_CUES.some(k=>lower.includes(k))) return 'Deferred';
+  if(DECISION_CUES.some(k=>lower.includes(k))) return 'Decision';
+  if(NOTED_CUES.some(k=>lower.includes(k))) return 'Noted';
+  return 'Discussion';
+}
+function extractDecisionSentence(p){
+  const sentences = splitSentences(p);
+  const hit = sentences.find(s=>{ const l=s.toLowerCase(); return DECISION_CUES.some(k=>l.includes(k)); });
+  return hit || 'No specific decision recorded';
+}
+function localHeuristicParse(text){
+  const paragraphs = splitParagraphs(text);
+  const agendaItems = paragraphs.map(p=>{
+    const type = classifyParaType(p);
+    return {
+      heading: extractHeading(p), category:'', discussion:p, type,
+      decisionText: type==='Decision' ? extractDecisionSentence(p) : 'No specific decision recorded',
+      responsibility:'', timeline:'', ambiguous:false, ambiguityNote:''
+    };
+  });
+  const sentences = splitSentences(text);
+  const actionPoints = [];
+  sentences.forEach(s=>{
+    const lower = s.toLowerCase();
+    if(!ACTION_CUES.some(c=>lower.includes(c))) return;
+    let deadline = 'Not specified';
+    for(const re of DEADLINE_PATTERNS){ const m = s.match(re); if(m){ deadline = m[0].trim(); break; } }
+    let responsible = 'Not specified';
+    const capMatch = s.match(/^([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\b/);
+    if(capMatch && !['The','Board','It','This','A','An','Members','Chairman','Meeting'].includes(capMatch[1].split(' ')[0])) responsible = capMatch[1];
+    const parent = agendaItems.find(a=>a.discussion.includes(s));
+    actionPoints.push({
+      subject: parent ? parent.heading : '', action: s.trim(),
+      responsible, deadline, priority:'Medium', status:'Open',
+      remarks:'(auto-extracted locally — please verify)'
+    });
+  });
+  const pendingMatters = paragraphs
+    .filter(p=>{ const l=p.toLowerCase(); return PENDING_CUES.some(c=>l.includes(c)); })
+    .map(p=>{ const sents = splitSentences(p); return sents.find(s=>{ const l=s.toLowerCase(); return PENDING_CUES.some(c=>l.includes(c)); }) || p; });
+  const executiveSummary = paragraphs.map(p=> splitSentences(p)[0] || p).join(' ');
+  return {agendaItems, actionPoints, pendingMatters, executiveSummary};
+}
+async function startRuleBasedMinutes(){
+  const input = document.getElementById('mInput').value.trim();
+  const msg = document.getElementById('genMsg');
+  if(!input){ msg.innerHTML = '<div class="msg error">Enter some notes or a transcript first.</div>'; return; }
+  const {details, boardMode, shgMode, shg, quorum} = gatherMeetingDetails();
+  const prevId = document.getElementById('mPrevMeeting').value;
+  const prevMeeting = prevId ? DB.meetings.find(m=>m.id===prevId) : null;
+  const carry = prevMeeting ? getOpenItemsFor(prevMeeting) : null;
+
+  const parsed = localHeuristicParse(input);
+  let actionPoints = parsed.actionPoints;
+  let pendingMatters = parsed.pendingMatters;
+  if(carry){
+    const existingWords = actionPoints.map(a=>normWords(a.action));
+    carry.openActions.forEach(prevA=>{
+      const w = normWords(prevA.action);
+      const alreadyThere = existingWords.some(ew=> ew.size>=3 && w.size>=3 && jaccard(ew,w)>0.55);
+      if(!alreadyThere) actionPoints.push({...prevA, remarks:(prevA.remarks?prevA.remarks+' ':'')+'(carried forward from previous meeting)'});
+    });
+    carry.pending.forEach(p=>{ if(!pendingMatters.some(x=>x.toLowerCase()===p.toLowerCase())) pendingMatters.push(p); });
+  }
+
+  draft = {
+    id: uid(), createdAt: new Date().toISOString(), details,
+    boardMode, shgMode, shg, quorum,
+    linkedPreviousMeetingId: prevId || '',
+    confirmation: {status:'Draft', date:'', ref:''},
+    agendaItems: normalizeAgendaItems(parsed.agendaItems),
+    pendingMatters,
+    actionPoints: normalizeActionPoints(actionPoints),
+    executiveSummary: parsed.executiveSummary,
+    oneMinuteSummary: '',
+    rawInput: input,
+    qaHistory: []
+  };
+  if(attachedMaterials.length) await persistMaterialsToMeeting(draft.id);
+  unsavedChanges = true;
+  doAutosave();
+  showScreen('review');
+  showToast('Structured locally with no AI — this is approximate keyword matching, please review every item.', 'ok');
 }
 
 async function generateMinutes(){
