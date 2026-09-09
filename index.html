@@ -244,7 +244,11 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     <div id="materialList" style="margin-top:10px;"></div>
 
     <div id="genMsg" style="margin-top:14px;"></div>
-    <button class="btn" id="genBtn" onclick="generateMinutes()">Generate minutes</button>
+    <div class="actions-toolbar">
+      <button class="btn" id="genBtn" onclick="generateMinutes()">Generate minutes with AI</button>
+      <button class="btn outline" onclick="startManualMinutes()">Skip AI — enter minutes manually</button>
+    </div>
+    <div class="caption">"Generate minutes with AI" sends your notes to your chosen AI provider (set in Settings). "Skip AI" keeps everything on this device — it opens a blank Review screen for you to fill in by hand, and nothing is sent anywhere unless you separately use Attach Material's text extraction, AI Check, or Ask AI.</div>
   </div>
 </section>
 
@@ -920,14 +924,7 @@ Rules you must follow strictly:
 - If a responsible person or deadline is not mentioned for an action, leave it blank / "Not specified" — never guess.
 - Output ONLY valid JSON, no markdown fences, no commentary.`;
 
-async function generateMinutes(){
-  const btn = document.getElementById('genBtn');
-  const msg = document.getElementById('genMsg');
-  const input = document.getElementById('mInput').value.trim();
-  if(!input){ msg.innerHTML = '<div class="msg error">Enter some notes or a transcript first.</div>'; return; }
-  btn.disabled = true;
-  msg.innerHTML = '<div class="msg"><span class="spinner"></span>Structuring the meeting (step 1 of 2)...</div>';
-
+function gatherMeetingDetails(){
   const details = {
     org: val('mOrg'), title: val('mTitle'), type: val('mType'), date: val('mDate'),
     start: val('mStart'), end: val('mEnd'), venue: val('mVenue'), lang: val('mLang'),
@@ -941,6 +938,47 @@ async function generateMinutes(){
     loans: val('mShgLoans'), npa: val('mShgNpa'), crp: val('mShgCrp'), bankLinkage: val('mShgBankLinkage')
   } : null;
   const quorum = computeQuorum(details.present, val('mTotalMembers'), val('mQuorumReq'));
+  return {details, boardMode, shgMode, shg, quorum};
+}
+
+/* Fully local path — no AI call, no data leaves the device. Opens a blank,
+   editable Review screen pre-filled only with what's already in the meeting
+   details form and any notes typed so far. */
+async function startManualMinutes(){
+  const {details, boardMode, shgMode, shg, quorum} = gatherMeetingDetails();
+  const prevId = document.getElementById('mPrevMeeting').value;
+  const prevMeeting = prevId ? DB.meetings.find(m=>m.id===prevId) : null;
+  const carry = prevMeeting ? getOpenItemsFor(prevMeeting) : null;
+
+  draft = {
+    id: uid(), createdAt: new Date().toISOString(), details,
+    boardMode, shgMode, shg, quorum,
+    linkedPreviousMeetingId: prevId || '',
+    confirmation: {status:'Draft', date:'', ref:''},
+    agendaItems: [],
+    pendingMatters: carry ? carry.pending.slice() : [],
+    actionPoints: carry ? carry.openActions.map(a=>({...a, remarks:(a.remarks?a.remarks+' ':'')+'(carried forward from previous meeting)'})) : [],
+    executiveSummary: '',
+    oneMinuteSummary: '',
+    rawInput: document.getElementById('mInput').value.trim(),
+    qaHistory: []
+  };
+  if(attachedMaterials.length) await persistMaterialsToMeeting(draft.id);
+  unsavedChanges = true;
+  doAutosave();
+  showScreen('review');
+  showToast('Blank minutes ready to fill in — nothing was sent anywhere.', 'ok');
+}
+
+async function generateMinutes(){
+  const btn = document.getElementById('genBtn');
+  const msg = document.getElementById('genMsg');
+  const input = document.getElementById('mInput').value.trim();
+  if(!input){ msg.innerHTML = '<div class="msg error">Enter some notes or a transcript first.</div>'; return; }
+  btn.disabled = true;
+  msg.innerHTML = '<div class="msg"><span class="spinner"></span>Structuring the meeting (step 1 of 2)...</div>';
+
+  const {details, boardMode, shgMode, shg, quorum} = gatherMeetingDetails();
 
   const prevId = document.getElementById('mPrevMeeting').value;
   const prevMeeting = prevId ? DB.meetings.find(m=>m.id===prevId) : null;
