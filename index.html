@@ -23,7 +23,7 @@ button{font-family:var(--sans);cursor:pointer;}
 .app-header{background:var(--ink);color:#EFEFE9;padding:18px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
 .app-header .title{font-family:var(--serif);font-size:1.25rem;font-weight:600;letter-spacing:.2px;}
 .app-header .org{font-size:.82rem;color:#C9CFC7;}
-nav.tabs{display:flex;gap:2px;background:var(--panel);border-bottom:1px solid var(--border);padding:0 20px;overflow-x:auto;}
+nav.tabs{display:flex;gap:2px;background:var(--panel);border-bottom:1px solid var(--border);padding:0 20px;overflow-x:auto;position:sticky;top:0;z-index:50;}
 nav.tabs button{background:none;border:none;padding:12px 16px;font-size:.92rem;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;}
 nav.tabs button.active{color:var(--ink);border-bottom-color:var(--accent);font-weight:600;}
 main{max-width:960px;margin:0 auto;padding:24px 20px 80px;}
@@ -2192,22 +2192,26 @@ function loadMammoth(){
 const EXTRACTION_INSTRUCTIONS = 'Extract all readable text from this file, preserving structure (headings, lists, tables) as plain text as closely as possible. If it is handwritten meeting notes, transcribe them faithfully without correcting or rephrasing the content — only guess at illegible words in [brackets]. Output only the extracted text, nothing else.';
 async function extractViaAI(file, mediaType){
   if(navigator.onLine === false) throw new Error('No internet connection — extracting text from images/PDFs needs to be online.');
-  const base64 = await fileToBase64(file);
   if((SETTINGS.provider||'anthropic') === 'puter'){
     await loadPuter();
-    const model = SETTINGS.puterModel || 'claude-sonnet-4-6';
-    const dataUrl = `data:${mediaType};base64,${base64}`;
-    let res;
+    // Dedicated free OCR endpoint — works regardless of which chat model is selected in Settings.
     try{
-      res = await puter.ai.chat(EXTRACTION_INSTRUCTIONS, dataUrl, false, {model});
-    }catch(e){
-      throw new Error('The free provider could not read this file (not every model supports images/PDFs). Try a different model in Settings, or your own Anthropic API key.');
-    }
-    const text = extractPuterText(res);
-    if(!text) throw new Error('No text could be extracted — the file may be blank, unreadable, or unsupported by this model.');
-    return text;
+      const text = await puter.ai.img2txt(file);
+      if(text && text.trim()) return text;
+    }catch(e){ /* fall through to vision-chat fallback below */ }
+    // Fallback: some file types (e.g. certain PDFs) may need the chat-vision path instead.
+    try{
+      const base64 = await fileToBase64(file);
+      const model = SETTINGS.puterModel || 'claude-sonnet-4-6';
+      const dataUrl = `data:${mediaType};base64,${base64}`;
+      const res = await puter.ai.chat(EXTRACTION_INSTRUCTIONS, dataUrl, false, {model});
+      const text2 = extractPuterText(res);
+      if(text2 && text2.trim()) return text2;
+    }catch(e){ /* fall through to error below */ }
+    throw new Error('Could not extract text from this file with the free provider. Try again, try a different file, or switch to your own Anthropic API key in Settings.');
   }
   if(!SETTINGS.apiKey) throw new Error('Add your Anthropic API key in Settings first — or switch to the free provider.');
+  const base64 = await fileToBase64(file);
   const contentBlock = mediaType==='application/pdf'
     ? {type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}}
     : {type:'image', source:{type:'base64', media_type:mediaType, data:base64}};
