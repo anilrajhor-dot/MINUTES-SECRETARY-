@@ -648,13 +648,20 @@ function startNew(mode){
 let attachedMaterials = [];
 function handleMaterialFiles(event){
   const files = Array.from(event.target.files||[]);
+  if(!files.length) return;
+  let added = 0, skipped = 0;
   files.forEach(f=>{
+    const dup = attachedMaterials.some(m=>m.name===f.name && m.file.size===f.size);
+    if(dup){ skipped++; return; }
+    added++;
     const item = {id: uid(), name:f.name, file:f, text:'', status:'extracting'};
     attachedMaterials.push(item);
     extractMaterialText(item).then(()=>renderMaterialList());
   });
   renderMaterialList();
   event.target.value = '';
+  if(added) showToast(added===1 ? '1 file attached — extracting text…' : added+' files attached — extracting text…', 'ok');
+  if(skipped) showToast('Already attached — skipped '+skipped+' duplicate file'+(skipped>1?'s':'')+'.', 'error');
 }
 async function extractMaterialText(item){
   try{
@@ -679,7 +686,7 @@ function renderMaterialList(){
       </div>
       ${item.status==='extracting' ? '<div class="caption"><span class="spinner"></span>Extracting text…</div>' : ''}
       ${item.status==='error' ? `<div class="msg error">${escapeHtml(item.error)}</div>` : ''}
-      ${item.status==='done' ? `<textarea rows="3" oninput="updateMaterialText('${item.id}', this.value)">${escapeHtml(item.text)}</textarea>` : ''}
+      ${item.status==='done' ? `<div class="msg ok" style="margin-bottom:6px;">✓ Text ready — edit below if needed, then tap "Insert into notes".</div><textarea rows="3" oninput="updateMaterialText('${item.id}', this.value)">${escapeHtml(item.text)}</textarea>` : ''}
     </div>`).join('');
 }
 function updateMaterialText(id, value){ const m = attachedMaterials.find(x=>x.id===id); if(m) m.text = value; }
@@ -703,7 +710,9 @@ async function persistMaterialsToMeeting(meetingId){
 /* ---------- attach material from the Review screen (post-generation) ---------- */
 async function handleMaterialFilesReview(event){
   const files = Array.from(event.target.files||[]);
+  if(!files.length) return;
   const wrap = document.getElementById('materialListReview');
+  showToast(files.length===1 ? '1 file attached — extracting text…' : files.length+' files attached — extracting text…', 'ok');
   if(wrap) wrap.innerHTML += '<div class="caption"><span class="spinner"></span>Extracting text…</div>';
   for(const f of files){
     const item = {id: uid(), name:f.name, file:f};
