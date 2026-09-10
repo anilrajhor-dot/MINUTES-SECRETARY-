@@ -517,7 +517,6 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
       <select id="setProvider" onchange="toggleProviderFields()">
         <option value="anthropic">Your own Anthropic API key</option>
         <option value="puter">Free — no key needed (Puter.js)</option>
-        <option value="pollinations">Free — no key, no sign-in (Pollinations.ai)</option>
       </select>
     </div>
 
@@ -540,20 +539,6 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
         </select>
       </div>
       <div class="field hidden" id="puterCustomWrap"><label>Custom Puter model ID</label><input type="text" id="setPuterModelCustom" placeholder="e.g. google/gemini-2.5-pro"></div>
-    </div>
-
-    <div id="providerPollinations" class="hidden">
-      <div class="caption">Free, anonymous, no account or popup of any kind — plain requests to Pollinations.ai's public API, no sign-in step. This is newer and less battle-tested than the other two options here, may be rate-limited under heavy use, and its image/PDF text-extraction quality varies more by model — worth trying if Puter's sign-in popup is causing trouble on your device.</div>
-      <div class="field"><label>Model</label>
-        <select id="setPollinationsModel">
-          <option value="openai">OpenAI (default, gpt-4.1-mini class)</option>
-          <option value="openai-large">OpenAI Large (higher quality, slower)</option>
-          <option value="mistral">Mistral</option>
-          <option value="gemini">Gemini</option>
-          <option value="custom">Custom model ID…</option>
-        </select>
-      </div>
-      <div class="field hidden" id="pollinationsCustomWrap"><label>Custom Pollinations model ID</label><input type="text" id="setPollinationsModelCustom" placeholder="see text.pollinations.ai/models"></div>
     </div>
 
     <div class="field"><label>Default organisation name</label><input type="text" id="setOrg"></div>
@@ -800,14 +785,10 @@ function toggleProviderFields(){
   const p = document.getElementById('setProvider').value;
   document.getElementById('providerAnthropic').classList.toggle('hidden', p!=='anthropic');
   document.getElementById('providerPuter').classList.toggle('hidden', p!=='puter');
-  document.getElementById('providerPollinations').classList.toggle('hidden', p!=='pollinations');
 }
 document.addEventListener('change', (e)=>{
   if(e.target && e.target.id==='setPuterModel'){
     document.getElementById('puterCustomWrap').classList.toggle('hidden', e.target.value!=='custom');
-  }
-  if(e.target && e.target.id==='setPollinationsModel'){
-    document.getElementById('pollinationsCustomWrap').classList.toggle('hidden', e.target.value!=='custom');
   }
 });
 function loadSettingsForm(){
@@ -824,16 +805,6 @@ function loadSettingsForm(){
     document.getElementById('setPuterModelCustom').value = pm;
     document.getElementById('puterCustomWrap').classList.remove('hidden');
   }
-  const knownPollinationsModels = ['openai','openai-large','mistral','gemini'];
-  const plm = SETTINGS.pollinationsModel || 'openai';
-  if(knownPollinationsModels.includes(plm)){
-    document.getElementById('setPollinationsModel').value = plm;
-    document.getElementById('pollinationsCustomWrap').classList.add('hidden');
-  }else{
-    document.getElementById('setPollinationsModel').value = 'custom';
-    document.getElementById('setPollinationsModelCustom').value = plm;
-    document.getElementById('pollinationsCustomWrap').classList.remove('hidden');
-  }
   document.getElementById('setOrg').value = SETTINGS.org||'';
   document.getElementById('setTemplate').value = SETTINGS.template||'Board Meeting';
   toggleProviderFields();
@@ -841,14 +812,11 @@ function loadSettingsForm(){
 function saveSettings(){
   const puterModelSel = document.getElementById('setPuterModel').value;
   const puterModel = puterModelSel==='custom' ? (document.getElementById('setPuterModelCustom').value.trim()||'claude-sonnet-4-6') : puterModelSel;
-  const pollModelSel = document.getElementById('setPollinationsModel').value;
-  const pollinationsModel = pollModelSel==='custom' ? (document.getElementById('setPollinationsModelCustom').value.trim()||'openai') : pollModelSel;
   SETTINGS = {
     provider: document.getElementById('setProvider').value,
     apiKey: document.getElementById('setApiKey').value.trim(),
     model: document.getElementById('setModel').value.trim() || 'claude-sonnet-4-5',
     puterModel,
-    pollinationsModel,
     org: document.getElementById('setOrg').value.trim(),
     template: document.getElementById('setTemplate').value
   };
@@ -899,32 +867,6 @@ async function callClaude(system, userText, maxTokens){
     }
     const text = extractPuterText(res);
     if(!text) throw new Error('No response text from the free provider — try again, or switch model in Settings.');
-    return text;
-  }
-  if((SETTINGS.provider||'anthropic') === 'pollinations'){
-    let res;
-    try{
-      res = await fetch('https://text.pollinations.ai/openai', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          model: SETTINGS.pollinationsModel || 'openai',
-          messages: [{role:'system', content: system}, {role:'user', content: userText}],
-          max_tokens: maxTokens || 4000
-        })
-      });
-    }catch(networkErr){
-      throw new Error('Could not reach Pollinations.ai — check your internet connection and try again.');
-    }
-    if(!res.ok){
-      let detail=''; try{ detail = (await res.text()).slice(0,300); }catch(e){}
-      throw new Error('Pollinations.ai error ('+res.status+')'+(detail?': '+detail:'')+' — try again, or switch provider/model in Settings.');
-    }
-    let data;
-    try{ data = await res.json(); }
-    catch(e){ throw new Error('Received an unreadable response from Pollinations.ai. Please try again.'); }
-    const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    if(!text) throw new Error('No response text from Pollinations.ai — try again, or switch model in Settings.');
     return text;
   }
   if(!SETTINGS.apiKey){ throw new Error('Add your Anthropic API key in Settings first — or switch to a free provider in Settings.'); }
@@ -2289,39 +2231,7 @@ async function extractViaAI(file, mediaType){
       if(text2 && text2.trim()) return text2;
       err2 = 'returned empty text';
     }catch(e){ err2 = errText(e); }
-    throw new Error(`Could not extract text with the free provider (OCR: ${err1}; vision fallback: ${err2}). If a Puter sign-in popup appeared and got blocked, allow popups for this site and try again — otherwise try a different file, switch to Pollinations.ai, or use your own Anthropic API key in Settings.`);
-  }
-  if((SETTINGS.provider||'anthropic') === 'pollinations'){
-    const base64 = await fileToBase64(file);
-    if(mediaType === 'application/pdf'){
-      throw new Error('Pollinations.ai doesn\'t reliably support PDF text extraction here — try converting the page to an image, or switch to Puter.js or your own Anthropic API key in Settings.');
-    }
-    let res;
-    try{
-      res = await fetch('https://text.pollinations.ai/openai', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          model: SETTINGS.pollinationsModel || 'openai',
-          messages: [{role:'user', content:[
-            {type:'text', text: EXTRACTION_INSTRUCTIONS},
-            {type:'image_url', image_url:{url:`data:${mediaType};base64,${base64}`}}
-          ]}],
-          max_tokens: 4000
-        })
-      });
-    }catch(networkErr){
-      throw new Error('Could not reach Pollinations.ai — check your internet connection and try again.');
-    }
-    if(!res.ok){
-      let detail=''; try{ detail = (await res.text()).slice(0,300); }catch(e){}
-      throw new Error('Pollinations.ai error ('+res.status+')'+(detail?': '+detail:'')+' — try a different model in Settings, or switch provider.');
-    }
-    let data;
-    try{ data = await res.json(); }catch(e){ throw new Error('Received an unreadable response from Pollinations.ai. Please try again.'); }
-    const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    if(!text || !text.trim()) throw new Error('No text could be extracted — this model may not support images. Try a different model in Settings, or switch provider.');
-    return text;
+    throw new Error(`Could not extract text with the free provider (OCR: ${err1}; vision fallback: ${err2}). If a Puter sign-in popup appeared and got blocked, allow popups for this site and try again — otherwise try a different file, or use your own Anthropic API key in Settings.`);
   }
   if(!SETTINGS.apiKey) throw new Error('Add your Anthropic API key in Settings first — or switch to a free provider.');
   const base64 = await fileToBase64(file);
