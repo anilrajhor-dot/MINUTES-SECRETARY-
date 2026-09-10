@@ -895,7 +895,7 @@ async function callClaude(system, userText, maxTokens){
       const messages = [{role:'system', content: system}, {role:'user', content: userText}];
       res = await puter.ai.chat(messages, false, {model, max_tokens: maxTokens||4000});
     }catch(err){
-      throw new Error('Free provider error: '+(err && err.message ? err.message : 'the request failed — try again, or switch model/provider in Settings.'));
+      throw new Error('Free provider error: '+errText(err));
     }
     const text = extractPuterText(res);
     if(!text) throw new Error('No response text from the free provider — try again, or switch model in Settings.');
@@ -2257,6 +2257,14 @@ function loadMammoth(){
   return mammothLoadPromise;
 }
 const EXTRACTION_INSTRUCTIONS = 'Extract all readable text from this file, preserving structure (headings, lists, tables) as plain text as closely as possible. If it is handwritten meeting notes, transcribe them faithfully without correcting or rephrasing the content — only guess at illegible words in [brackets]. Output only the extracted text, nothing else.';
+function errText(e){
+  if(!e) return 'unknown error';
+  if(typeof e === 'string') return e;
+  if(e.error && typeof e.error === 'object' && typeof e.error.message === 'string') return e.error.message;
+  if(typeof e.message === 'string' && e.message) return e.message;
+  if(typeof e.error === 'string' && e.error) return e.error;
+  try{ return JSON.stringify(e); }catch(_){ return String(e); }
+}
 async function extractViaAI(file, mediaType){
   if(navigator.onLine === false) throw new Error('No internet connection — extracting text from images/PDFs needs to be online.');
   if((SETTINGS.provider||'anthropic') === 'puter'){
@@ -2270,7 +2278,7 @@ async function extractViaAI(file, mediaType){
       const text = await puter.ai.img2txt(file);
       if(text && text.trim()) return text;
       err1 = 'returned empty text';
-    }catch(e){ err1 = (e && (e.message||e.error||JSON.stringify(e))) || 'unknown error'; }
+    }catch(e){ err1 = errText(e); }
     // Fallback: some file types (e.g. certain PDFs) may need the chat-vision path instead.
     try{
       const base64 = await fileToBase64(file);
@@ -2280,7 +2288,7 @@ async function extractViaAI(file, mediaType){
       const text2 = extractPuterText(res);
       if(text2 && text2.trim()) return text2;
       err2 = 'returned empty text';
-    }catch(e){ err2 = (e && (e.message||e.error||JSON.stringify(e))) || 'unknown error'; }
+    }catch(e){ err2 = errText(e); }
     throw new Error(`Could not extract text with the free provider (OCR: ${err1}; vision fallback: ${err2}). If a Puter sign-in popup appeared and got blocked, allow popups for this site and try again — otherwise try a different file, switch to Pollinations.ai, or use your own Anthropic API key in Settings.`);
   }
   if((SETTINGS.provider||'anthropic') === 'pollinations'){
