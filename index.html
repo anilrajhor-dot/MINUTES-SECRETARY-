@@ -598,6 +598,7 @@ function showToast(msg, kind){
 let DB = { meetings: safeParse(localStorage.getItem('mb_meetings'), []) };
 if(!Array.isArray(DB.meetings)) DB.meetings = [];
 let SETTINGS = safeParse(localStorage.getItem('mb_settings'), {});
+if(SETTINGS.provider === 'pollinations'){ SETTINGS.provider = 'puter'; safeSetItem('mb_settings', JSON.stringify(SETTINGS)); }
 let draft = null; // current in-progress meeting object
 let unsavedChanges = false;
 
