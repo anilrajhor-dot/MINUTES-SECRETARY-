@@ -117,6 +117,7 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
   <button data-tab="library" onclick="showScreen('library')">Meeting Library</button>
   <button data-tab="tracker" onclick="showScreen('tracker')">Action Tracker</button>
   <button data-tab="insights" onclick="showScreen('insights')">Insights</button>
+  <button data-tab="help" onclick="showScreen('help')">Help</button>
 </nav>
 
 <main>
@@ -136,6 +137,7 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
   <div class="hero">
     <h1>Prepare board-ready minutes from rough notes</h1>
     <p>Record the gist of a meeting, and this assistant will structure it into formal minutes, decisions, and a tracked action-point register — nothing invented beyond what you give it.</p>
+    <p style="margin-top:10px;"><a href="#" onclick="showScreen('help');return false;">New here? See how it works, step by step →</a></p>
   </div>
 
   <div class="stat-row" id="homeStats"></div>
@@ -506,6 +508,74 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
   <div class="section">
     <h2>Meeting types</h2>
     <div id="insightTypes"></div>
+  </div>
+</section>
+
+<!-- ============ HELP ============ -->
+<section id="screen-help" class="hidden">
+  <div class="hero">
+    <h1>How this app works</h1>
+    <p>A quick walkthrough, start to finish. Every step below is something you can try right now.</p>
+  </div>
+
+  <div class="section">
+    <h2>1. Get your first minutes in 4 steps</h2>
+    <ol style="padding-left:20px;line-height:1.9;">
+      <li>Tap <b>New Meeting</b>. Fill in whatever meeting details you have — all of them are optional, so skip what you don't know.</li>
+      <li>Add the content: type <b>Quick Notes</b>, paste a <b>transcript</b>, use <b>Record Meeting</b> to speak it, <b>Upload Recording</b> for an existing audio/video file, or <b>Attach material</b> to pull text from a photo/PDF.</li>
+      <li>Tap <b>Generate minutes with AI</b>. You'll see a short progress message, then land on the Review screen with agenda items, decisions, and an action-point register already filled in.</li>
+      <li>Read through it, fix anything the AI got wrong (it's told never to invent decisions or deadlines, but always double-check), then tap <b>Save meeting</b>.</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2>2. Three ways to turn notes into minutes</h2>
+    <p><b>Generate minutes with AI</b> — sends your notes to whichever AI provider you've picked in Settings. Best quality, especially for formal language and classifying decisions vs. discussion.</p>
+    <p><b>Auto-structure without AI (offline)</b> — runs entirely on your device using keyword matching. Nothing is sent anywhere. Rougher: your own sentences are used as-is (not reworded), and it won't translate Hindi to English even if you've set English as the output language — only the AI path translates.</p>
+    <p><b>Skip AI — enter minutes manually</b> — opens a blank Review screen for you to type everything in by hand. Also fully local.</p>
+  </div>
+
+  <div class="section">
+    <h2>3. Recording and attaching material</h2>
+    <p><b>Record Meeting</b> lets you record live with your microphone; if your browser supports it, you'll also see a live transcript as you speak (works best in Chrome; iPhone Safari records audio fine but usually won't transcribe live).</p>
+    <p><b>Upload Recording</b> attaches an existing audio/video file and can transcribe it with AI, including speaker labels and timestamps where the audio allows.</p>
+    <p><b>Attach material</b> (on New Meeting or Review) reads text out of photos, scans, and PDFs — handy for agenda papers or handwritten notes. Review the extracted text, fix any errors, then tap <b>Insert into notes</b>.</p>
+  </div>
+
+  <div class="section">
+    <h2>4. The Review screen</h2>
+    <ul style="padding-left:20px;line-height:1.9;">
+      <li>Every field is editable — agenda headings, discussion text, decisions, and the whole action-point table.</li>
+      <li>For Board Meetings, a quorum check appears automatically if you filled in total members and quorum required.</li>
+      <li><b>AI check</b> flags missing owners, missing deadlines, unclear decisions, and possible duplicates — it never changes your text, only points things out.</li>
+      <li><b>Ask AI about this meeting</b> answers questions using only that meeting's own content.</li>
+      <li><b>Listen to minutes</b> reads the full minutes, a summary, decisions only, actions only, or pending matters only, out loud.</li>
+      <li><b>Minutes status</b> (Draft → Circulated → Confirmed) matches how real minute books track approval at the next meeting.</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>5. Getting minutes out</h2>
+    <p><b>Review & Export</b> has Save, Word export, and Excel export (with separate sheets for details, attendance, agenda, decisions, action points, and a follow-up tracker).</p>
+    <p><b>Share & Print</b> (its own tab) prints or saves as PDF via your device's print dialog, and shares by WhatsApp, Email, or your device's native share sheet — including sharing the actual Word file, not just text.</p>
+  </div>
+
+  <div class="section">
+    <h2>6. Finding things later</h2>
+    <p><b>Meeting Library</b> — every saved meeting, searchable by title, person, department, agenda, or keyword.</p>
+    <p><b>Action Tracker</b> — every action point across all meetings in one place, with overdue/due/completed status you can update directly.</p>
+    <p><b>Insights</b> — meetings per month, completion rates, and who's carrying the most open action points.</p>
+  </div>
+
+  <div class="section">
+    <h2>7. Settings worth knowing about</h2>
+    <p><b>AI provider</b> — Puter.js (free, no key, may show a one-time sign-in popup) or your own Anthropic API key. Whichever you pick applies to minute generation, AI check, Ask AI, and text extraction from photos/PDFs.</p>
+    <p><b>Default organisation</b> and <b>default meeting template</b> save you re-typing them every time.</p>
+  </div>
+
+  <div class="section">
+    <h2>8. Privacy, in one paragraph</h2>
+    <p>Everything you type, save, and export stays on this device (localStorage/IndexedDB) unless you explicitly tap one of the AI actions — Generate with AI, AI check, Ask AI, or Attach material's text extraction. Those send only the relevant text (or file) to your chosen provider. "Auto-structure without AI" and "Skip AI" never send anything anywhere.</p>
   </div>
 </section>
 
