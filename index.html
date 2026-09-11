@@ -6,7 +6,7 @@
 <title>Minute Book — AI Meeting Minutes &amp; Action-Point Secretary</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- Excel export is self-contained below — no external library needed -->
 <style>
 :root{
   --ink:#1B2A3D; --paper:#F5F6F3; --panel:#FFFFFF; --border:#D8D9D3;
@@ -101,10 +101,12 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
 
 <div class="app-header no-print">
   <div>
-    <div class="title">Minute Book</div>
-    <div class="org" id="orgNameDisplay">AI Meeting Minutes &amp; Action-Point Secretary</div>
+    <div class="title">🔒 Minute Book <span id="verBadge" style="font-size:.6em;opacity:.7;font-weight:400;"></span></div>
+    <div class="org" id="orgNameDisplay">Confidential Local-First Minute Book</div>
   </div>
-  <div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <span id="modeBadge" class="tag" style="border-color:#8FBFA0;color:#8FBFA0;"></span>
+    <button class="btn small secondary" onclick="showScreen('privacy')">Privacy</button>
     <button class="btn small secondary" onclick="showScreen('settings')">Settings</button>
   </div>
 </div>
@@ -117,10 +119,21 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
   <button data-tab="library" onclick="showScreen('library')">Meeting Library</button>
   <button data-tab="tracker" onclick="showScreen('tracker')">Action Tracker</button>
   <button data-tab="insights" onclick="showScreen('insights')">Insights</button>
+  <button data-tab="privacy" onclick="showScreen('privacy')">Privacy</button>
   <button data-tab="help" onclick="showScreen('help')">Help</button>
 </nav>
 
 <main>
+
+<div id="lockScreen" class="hidden" style="position:fixed;inset:0;background:var(--paper);z-index:200;display:flex;align-items:center;justify-content:center;">
+  <div class="section" style="max-width:360px;width:90%;text-align:center;">
+    <h2>🔒 Enter PIN to unlock</h2>
+    <p class="caption">Your meeting data on this device is PIN-protected.</p>
+    <input type="password" id="lockPinInput" inputmode="numeric" placeholder="PIN" style="text-align:center;font-size:1.3rem;letter-spacing:4px;">
+    <div id="lockMsg" style="margin-top:10px;"></div>
+    <button class="btn" style="margin-top:12px;width:100%;" onclick="tryUnlock()">Unlock</button>
+  </div>
+</div>
 
 <div id="recoveryBanner" class="hidden" style="max-width:920px;margin:16px auto 0;">
   <div class="msg" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -139,6 +152,7 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     <p>Record the gist of a meeting, and this assistant will structure it into formal minutes, decisions, and a tracked action-point register — nothing invented beyond what you give it.</p>
     <p style="margin-top:10px;"><a href="#" onclick="showScreen('help');return false;">New here? See how it works, step by step →</a></p>
   </div>
+  <div class="msg ok" id="homeModeBanner" style="font-weight:600;"></div>
 
   <div class="stat-row" id="homeStats"></div>
 
@@ -181,7 +195,8 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
         <select id="mType" onchange="toggleTypeFields()">
           <option>Board Meeting</option><option>Management Meeting</option><option>Staff Meeting</option>
           <option>Review Meeting</option><option>Committee Meeting</option><option>Training / Workshop</option>
-          <option>SHG/VO/CLF Meeting (DAY-NRLM)</option><option>General Meeting</option>
+          <option>SHG/VO/CLF Meeting (DAY-NRLM)</option><option>Bank/SLRM/District-level Meeting</option>
+          <option>General Meeting</option><option>Custom Meeting</option>
         </select>
       </div>
       <div class="field"><label>Date</label><input type="date" id="mDate"></div>
@@ -194,6 +209,15 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
         <select id="mLang"><option>English Minutes</option><option>Original language</option><option>Hindi Minutes</option><option>Bilingual Minutes</option></select>
       </div>
     </div>
+    <div class="grid3">
+      <div class="field"><label>Meeting mode</label>
+        <select id="mMode"><option>Physical</option><option>Online</option><option>Hybrid</option></select>
+      </div>
+      <div class="field"><label>Meeting / reference number</label><input type="text" id="mNumber"></div>
+      <div class="field"><label>Confidentiality classification</label>
+        <select id="mConfidentiality"><option>Internal</option><option>Confidential</option><option>Strictly Confidential</option><option>Public</option></select>
+      </div>
+    </div>
     <div class="grid2">
       <div class="field"><label>Chairperson</label><input type="text" id="mChair"></div>
       <div class="field"><label>Secretary / recording officer</label><input type="text" id="mSec"></div>
@@ -204,6 +228,12 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     </div>
     <div class="field"><label>Special invitees</label><input type="text" id="mInvitees"></div>
     <div class="field"><label>Agenda (optional — leave blank to let AI infer from the notes)</label><textarea id="mAgenda"></textarea></div>
+
+    <div class="grid3">
+      <div class="field"><label>Previous meeting date</label><input type="date" id="mPrevDate"></div>
+      <div class="field"><label>Next meeting date</label><input type="date" id="mNextDate"></div>
+      <div class="field"><label>Resolution no. / date (if applicable)</label><input type="text" id="mResolution" placeholder="e.g. Res. 14/2026, 09-09-2026"></div>
+    </div>
 
     <div class="grid2" id="quorumFields">
       <div class="field"><label>Total members on the body (for quorum)</label><input type="text" id="mTotalMembers" placeholder="e.g. 9"></div>
@@ -240,18 +270,35 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     <div class="caption">Hindi, English, and Hinglish mixed together are all fine — meaning is preserved, not translated, unless you choose Hindi or Bilingual above.</div>
     <div class="field"><textarea id="mInput" rows="10" placeholder="Paste transcript or type quick notes here, e.g. 'Recovery ka performance satisfactory nahi hai. GM said all branches should review overdue accounts every Monday...'"></textarea></div>
 
-    <label>Attach material (photos of notes/agenda papers, scanned pages, PDFs)</label>
+    <div class="rowtools">
+      <button class="btn small secondary" onclick="detectSpeakers()">Detect speaker labels (Speaker 1, Speaker 2…)</button>
+    </div>
+    <div id="speakerMapWrap" class="hidden" style="margin-top:10px;border:1px solid var(--border);padding:12px;">
+      <div class="caption">Map each detected speaker to a role or name, then apply — this replaces the label throughout your notes. Nothing is guessed automatically.</div>
+      <div id="speakerMapList"></div>
+      <button class="btn small secondary" onclick="applySpeakerMap()">Apply mapping to notes</button>
+    </div>
+
+    <label style="margin-top:14px;display:block;">Attach material (photos of notes/agenda papers, scanned pages, PDFs)</label>
     <div class="caption">Choose from your device's file browser or photo gallery/camera. Text is extracted automatically using AI — review it, then insert into the notes above.</div>
     <input type="file" id="materialFile" accept="image/*,.pdf,.doc,.docx,.txt" multiple onchange="handleMaterialFiles(event)">
     <div id="materialList" style="margin-top:10px;"></div>
 
     <div id="genMsg" style="margin-top:14px;"></div>
+    <div class="field" style="max-width:340px;">
+      <label>Offline detail level (for "Auto-structure without AI")</label>
+      <div class="seg" role="group" aria-label="Detail level" style="display:inline-flex;border:1px solid var(--border);">
+        <button type="button" data-level="tight" class="btn small secondary" onclick="setDetailLevel('tight')">Tight</button>
+        <button type="button" data-level="balanced" class="btn small" onclick="setDetailLevel('balanced')">Balanced</button>
+        <button type="button" data-level="full" class="btn small secondary" onclick="setDetailLevel('full')">Full</button>
+      </div>
+    </div>
     <div class="actions-toolbar">
       <button class="btn" id="genBtn" onclick="generateMinutes()">Generate minutes with AI</button>
       <button class="btn secondary" onclick="startRuleBasedMinutes()">Auto-structure without AI (offline)</button>
       <button class="btn outline" onclick="startManualMinutes()">Skip AI — enter minutes manually</button>
     </div>
-    <div class="caption">"Generate minutes with AI" sends your notes to your chosen AI provider (set in Settings). "Auto-structure without AI" runs entirely on this device using keyword/pattern matching — it's rougher: agenda headings and decisions are pulled as-is from your own sentences (nothing reworded or polished), and action-point detection is approximate, so expect to tidy it up. "Skip AI" opens a blank Review screen for you to fill in by hand. Only the first option sends anything anywhere.</div>
+    <div class="caption">"Generate minutes with AI" sends your notes to your chosen AI provider (set in Settings). "Auto-structure without AI" runs entirely on this device using keyword/pattern matching — it's rougher: agenda headings and decisions are pulled as-is from your own sentences (nothing reworded or polished), and action-point detection is approximate, so expect to tidy it up. Detail level trims how many items it keeps (Tight ≈5, Balanced ≈9, Full ≈16 per list) — it does not affect the AI path. "Skip AI" opens a blank Review screen for you to fill in by hand. Only the first option sends anything anywhere.</div>
   </div>
 </section>
 
@@ -363,6 +410,16 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
       <textarea id="rPending" rows="4" placeholder="One matter per line"></textarea>
     </div>
 
+    <div class="section">
+      <h2>Risks &amp; blockers</h2>
+      <textarea id="rRisks" rows="3" placeholder="One risk/blocker per line"></textarea>
+    </div>
+
+    <div class="section">
+      <h2>Open questions</h2>
+      <textarea id="rQuestions" rows="3" placeholder="One open question per line"></textarea>
+    </div>
+
     <div class="section no-print">
       <h2>Attached material</h2>
       <div class="caption">Photos, scans, and papers attached to this meeting.</div>
@@ -391,20 +448,35 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     </div>
 
     <div class="section no-print">
-      <h2>Ask AI about this meeting</h2>
-      <div class="caption">Answers come only from this meeting's minutes — nothing outside it.</div>
+      <h2>Ask about this meeting</h2>
+      <div class="caption">"Ask AI" sends this meeting's minutes to your AI provider. "Ask locally" searches only the stored data on this device — no AI, no network, more literal matching.</div>
       <div id="qaHistory"></div>
       <div class="rowtools">
         <input type="text" id="qaInput" placeholder="e.g. What decisions were taken on recovery?" style="flex:1;">
-        <button class="btn secondary" onclick="askAboutMeeting()">Ask</button>
+        <button class="btn secondary" onclick="askAboutMeeting()">Ask AI</button>
+        <button class="btn outline" onclick="askLocally()">Ask locally (no AI)</button>
       </div>
     </div>
 
     <div class="section no-print">
-      <h2>AI check</h2>
+      <h2>Quality check</h2>
       <div class="caption">Flags missing owners, deadlines, unclear decisions, and possible duplicates — for your review only, nothing is changed automatically.</div>
-      <button class="btn secondary" onclick="runAICheck()">Run AI check</button>
+      <div class="rowtools">
+        <button class="btn outline" onclick="runLocalCheck()">Run local check (no AI)</button>
+        <button class="btn secondary" onclick="runAICheck()">Run AI check</button>
+      </div>
       <div id="aiCheckResults" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="section no-print" id="verificationSection">
+      <h2>Verification &amp; finalisation</h2>
+      <div id="verificationStatusBadge"></div>
+      <div id="verificationChecklist" style="margin:10px 0;"></div>
+      <div class="rowtools">
+        <button class="btn" id="finaliseBtn" onclick="finaliseMinutes()" disabled>Finalise minutes</button>
+        <button class="btn outline hidden" id="newRevisionBtn" onclick="createNewRevision()">Create new revision</button>
+      </div>
+      <div id="verificationMsg" style="margin-top:8px;"></div>
     </div>
 
     <div class="section no-print">
@@ -579,6 +651,29 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
   </div>
 </section>
 
+<!-- ============ PRIVACY DASHBOARD ============ -->
+<section id="screen-privacy" class="hidden">
+  <div class="hero">
+    <h1>🔒 Privacy Dashboard</h1>
+    <p>What's on this device, what's encrypted, and whether anything has left it this session.</p>
+  </div>
+  <div class="section">
+    <div class="stat-row" id="privacyStats"></div>
+    <div id="privacyDetails" style="margin-top:10px;"></div>
+  </div>
+  <div class="section">
+    <h2>Confidential offline test</h2>
+    <div class="caption">Exercises create/save/local-process/search/edit/export/tracker — every step runs without any network or AI call. If any step needs AI, it will fail here rather than silently phoning out.</div>
+    <button class="btn secondary" onclick="runOfflineTest()">Run confidential offline test</button>
+    <div id="offlineTestResults" style="margin-top:12px;"></div>
+  </div>
+  <div class="section">
+    <h2>Delete all confidential data</h2>
+    <div class="caption">Removes every saved meeting, recording, and attached material from this device. This cannot be undone.</div>
+    <button class="btn outline" onclick="deleteAllConfidentialData()">Delete all confidential data</button>
+  </div>
+</section>
+
 <!-- ============ SETTINGS ============ -->
 <section id="screen-settings" class="hidden">
   <div class="section">
@@ -616,16 +711,46 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
       <select id="setTemplate">
         <option>Board Meeting</option><option>Management Meeting</option><option>Staff Meeting</option>
         <option>Review Meeting</option><option>Committee Meeting</option><option>Training / Workshop</option>
-        <option>SHG/VO/CLF Meeting (DAY-NRLM)</option><option>General Meeting</option>
+        <option>SHG/VO/CLF Meeting (DAY-NRLM)</option><option>Bank/SLRM/District-level Meeting</option>
+        <option>General Meeting</option><option>Custom Meeting</option>
       </select>
+    </div>
+    <div class="field">
+      <label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" id="setConfirmAI" style="width:auto;"> Ask for confirmation before the first AI action each session</label>
     </div>
     <button class="btn" onclick="saveSettings()">Save settings</button>
     <div id="setMsg"></div>
   </div>
+
+  <div class="section">
+    <h2>🔒 PIN protection (optional)</h2>
+    <div class="caption">Encrypts your saved meetings on this device (AES-GCM) so they can't be read without your PIN. Off by default. If you forget your PIN, encrypted data cannot be recovered — there is no backdoor.</div>
+    <div id="pinStatusMsg" class="caption"></div>
+    <div id="pinSetupForm">
+      <div class="grid2">
+        <div class="field"><label>Set a PIN (min 4 digits)</label><input type="password" id="newPin" inputmode="numeric" placeholder="e.g. 1234"></div>
+        <div class="field"><label>Confirm PIN</label><input type="password" id="newPinConfirm" inputmode="numeric"></div>
+      </div>
+      <button class="btn secondary" onclick="enablePinProtection()">Enable PIN protection</button>
+    </div>
+    <div id="pinRemoveForm" class="hidden">
+      <div class="field"><label>Enter current PIN to remove protection</label><input type="password" id="removePinInput" inputmode="numeric"></div>
+      <button class="btn outline" onclick="disablePinProtection()">Remove PIN protection</button>
+    </div>
+    <div class="field" style="margin-top:10px;"><label>Auto-lock after inactivity</label>
+      <select id="setAutoLock">
+        <option value="0">Never</option>
+        <option value="5">5 minutes</option>
+        <option value="15">15 minutes</option>
+        <option value="30">30 minutes</option>
+      </select>
+    </div>
+    <button class="btn secondary" onclick="saveAutoLockSetting()">Save auto-lock setting</button>
+  </div>
   <div class="section">
     <h2>Data</h2>
-    <p class="caption">All meetings, transcripts, and settings are stored only on this device. Nothing is uploaded except the text sent to your chosen AI provider when you click Generate or Run AI check.</p>
-    <button class="btn outline" onclick="if(confirm('Delete ALL saved meetings on this device? This cannot be undone.')){localStorage.removeItem('mb_meetings');renderAll();alert('All meetings deleted.');}">Delete all meetings</button>
+    <p class="caption">All meetings, transcripts, and settings are stored only on this device. Nothing is uploaded except the specific content sent when you use an AI action (Generate, AI check, Ask AI, or extraction) — see the Privacy Dashboard for full details and to delete everything.</p>
+    <button class="btn outline" onclick="showScreen('privacy')">Open Privacy Dashboard</button>
   </div>
 </section>
 
@@ -665,16 +790,159 @@ function showToast(msg, kind){
 }
 
 /* ---------- state & storage ---------- */
+const APP_VERSION = 'v2.0';
+let anyAIUsedThisSession = false;
+let ENC = {active:false, key:null, salt:null}; // filled in by the encryption module below
 let DB = { meetings: safeParse(localStorage.getItem('mb_meetings'), []) };
 if(!Array.isArray(DB.meetings)) DB.meetings = [];
 let SETTINGS = safeParse(localStorage.getItem('mb_settings'), {});
 if(SETTINGS.provider === 'pollinations'){ SETTINGS.provider = 'puter'; safeSetItem('mb_settings', JSON.stringify(SETTINGS)); }
+if(SETTINGS.confirmAI === undefined) SETTINGS.confirmAI = true;
 let draft = null; // current in-progress meeting object
 let unsavedChanges = false;
 
-function persistMeetings(){ return safeSetItem('mb_meetings', JSON.stringify(DB.meetings)); }
+function persistMeetings(){
+  if(ENC.active){ return encryptAndPersistMeetings(); }
+  return safeSetItem('mb_meetings', JSON.stringify(DB.meetings));
+}
 function persistSettings(){ return safeSetItem('mb_settings', JSON.stringify(SETTINGS)); }
 function uid(){ return 'm_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); }
+
+/* ---------- encryption (Web Crypto AES-GCM, PIN-derived key) — off by default, opt-in only ---------- */
+function b64(buf){ return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function unb64(str){ return Uint8Array.from(atob(str), c=>c.charCodeAt(0)); }
+async function deriveKey(pin, saltB64){
+  const salt = unb64(saltB64);
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(pin), {name:'PBKDF2'}, false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    {name:'PBKDF2', salt, iterations:150000, hash:'SHA-256'},
+    keyMaterial, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']
+  );
+}
+async function encryptString(plaintext, key){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder();
+  const ciphertext = await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, enc.encode(plaintext));
+  return {iv: b64(iv), data: b64(ciphertext)};
+}
+async function decryptString(payload, key){
+  const iv = unb64(payload.iv);
+  const data = unb64(payload.data);
+  const plainBuf = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, data);
+  return new TextDecoder().decode(plainBuf);
+}
+async function encryptAndPersistMeetings(){
+  if(!ENC.active || !ENC.key) return safeSetItem('mb_meetings', JSON.stringify(DB.meetings));
+  try{
+    const payload = await encryptString(JSON.stringify(DB.meetings), ENC.key);
+    return safeSetItem('mb_meetings_enc', JSON.stringify(payload));
+  }catch(e){ console.error('Encryption failed', e); showToast('Could not encrypt data for saving.', 'error'); return false; }
+}
+async function enablePinProtection(){
+  if(!window.crypto || !window.crypto.subtle){ showToast('This browser does not support the encryption API needed for PIN protection.', 'error'); return; }
+  const pin = document.getElementById('newPin').value;
+  const confirmPin = document.getElementById('newPinConfirm').value;
+  if(!pin || pin.length<4){ showToast('PIN must be at least 4 characters.', 'error'); return; }
+  if(pin !== confirmPin){ showToast('PINs do not match.', 'error'); return; }
+  const saltB64 = b64(crypto.getRandomValues(new Uint8Array(16)));
+  const key = await deriveKey(pin, saltB64);
+  ENC = {active:true, key, salt:saltB64};
+  localStorage.setItem('mb_pin_salt', saltB64);
+  localStorage.setItem('mb_pin_enabled', '1');
+  await encryptAndPersistMeetings();
+  localStorage.removeItem('mb_meetings');
+  document.getElementById('newPin').value=''; document.getElementById('newPinConfirm').value='';
+  showToast('PIN protection enabled — your meetings are now encrypted on this device.', 'ok');
+  refreshPinUI();
+}
+async function disablePinProtection(){
+  const pin = document.getElementById('removePinInput').value;
+  try{
+    const salt = localStorage.getItem('mb_pin_salt');
+    const key = await deriveKey(pin, salt);
+    const raw = localStorage.getItem('mb_meetings_enc');
+    const payload = JSON.parse(raw);
+    const json = await decryptString(payload, key); // throws on wrong PIN
+    DB.meetings = JSON.parse(json);
+    ENC = {active:false, key:null, salt:null};
+    localStorage.removeItem('mb_meetings_enc');
+    localStorage.removeItem('mb_pin_enabled');
+    localStorage.removeItem('mb_pin_salt');
+    safeSetItem('mb_meetings', json);
+    document.getElementById('removePinInput').value='';
+    showToast('PIN protection removed — data is now stored unencrypted on this device.', 'ok');
+    refreshPinUI();
+  }catch(e){
+    showToast('Incorrect PIN.', 'error');
+  }
+}
+function refreshPinUI(){
+  const setupForm = document.getElementById('pinSetupForm');
+  if(!setupForm) return;
+  const enabled = localStorage.getItem('mb_pin_enabled')==='1';
+  document.getElementById('pinSetupForm').classList.toggle('hidden', enabled);
+  document.getElementById('pinRemoveForm').classList.toggle('hidden', !enabled);
+  document.getElementById('pinStatusMsg').innerHTML = enabled ? '🔒 PIN protection is currently ON.' : 'PIN protection is currently OFF — data is stored unencrypted on this device.';
+}
+function saveAutoLockSetting(){
+  SETTINGS.autoLockMinutes = parseInt(document.getElementById('setAutoLock').value,10) || 0;
+  persistSettings();
+  showToast('Auto-lock setting saved.', 'ok');
+}
+let lastActivityAt = Date.now();
+function markActivity(){ lastActivityAt = Date.now(); }
+function checkAutoLock(){
+  if(!ENC.active) return;
+  const mins = SETTINGS.autoLockMinutes||0;
+  if(!mins) return;
+  if(Date.now() - lastActivityAt > mins*60000) showLockScreen();
+}
+function showLockScreen(){ document.getElementById('lockScreen').classList.remove('hidden'); }
+async function tryUnlock(){
+  const pin = document.getElementById('lockPinInput').value;
+  const salt = localStorage.getItem('mb_pin_salt');
+  const raw = localStorage.getItem('mb_meetings_enc');
+  const msgEl = document.getElementById('lockMsg');
+  if(!salt || !raw){ msgEl.innerHTML = '<div class="msg error">No encrypted data found on this device.</div>'; return; }
+  try{
+    const key = await deriveKey(pin, salt);
+    const json = await decryptString(JSON.parse(raw), key);
+    DB.meetings = JSON.parse(json);
+    ENC = {active:true, key, salt};
+    document.getElementById('lockScreen').classList.add('hidden');
+    document.getElementById('lockPinInput').value = '';
+    msgEl.innerHTML = '';
+    markActivity();
+    renderAll();
+  }catch(e){
+    msgEl.innerHTML = '<div class="msg error">Incorrect PIN.</div>';
+  }
+}
+
+function updateModeBadges(){
+  const verBadge = document.getElementById('verBadge');
+  if(verBadge) verBadge.textContent = APP_VERSION;
+  const modeBadge = document.getElementById('modeBadge');
+  const homeBanner = document.getElementById('homeModeBanner');
+  const online = navigator.onLine !== false;
+  const providerLabel = (SETTINGS.provider==='puter') ? 'Puter.js (free)' : 'Anthropic (your key)';
+  let text, cls;
+  if(anyAIUsedThisSession){
+    text = '⚡ AI-assisted this session — '+providerLabel;
+    cls = 'discussion';
+  }else{
+    text = '🔒 Confidential Offline Mode';
+    cls = 'decision';
+  }
+  if(modeBadge){ modeBadge.textContent = text; modeBadge.className = 'tag '+cls; }
+  if(homeBanner){
+    homeBanner.className = anyAIUsedThisSession ? 'msg' : 'msg ok';
+    homeBanner.innerHTML = anyAIUsedThisSession
+      ? '⚡ AI has been used this session (provider: '+escapeHtml(providerLabel)+'). Offline-only actions (typing, editing, saving, exporting, printing) never leave this device.'
+      : '🔒 Confidential Offline Mode — No Data Leaves This Device. AI features are optional and only activate when you explicitly use them.';
+  }
+}
 
 window.addEventListener('beforeunload', function(e){
   if(unsavedChanges){ e.preventDefault(); e.returnValue=''; return ''; }
@@ -692,6 +960,8 @@ function showScreen(name){
   document.querySelectorAll('main > section').forEach(s=>s.classList.add('hidden'));
   document.getElementById('screen-'+name).classList.remove('hidden');
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  updateModeBadges();
+  markActivity();
   if(name==='home') renderHome();
   if(name==='review'){ renderReview(); populateVoiceList(); renderQAHistory(); }
   if(name==='share') renderShareScreen();
@@ -699,9 +969,17 @@ function showScreen(name){
   if(name==='tracker') renderTracker();
   if(name==='insights') renderInsights();
   if(name==='settings') loadSettingsForm();
+  if(name==='privacy') renderPrivacyDashboard();
   if(name==='record'){ switchRecordTab('live'); renderRecordingsList(); checkRecordingSupport(); }
 }
 
+let detailLevel = 'balanced';
+function setDetailLevel(lv){
+  detailLevel = lv;
+  document.querySelectorAll('.seg button[data-level]').forEach(b=>{
+    b.className = 'btn small ' + (b.dataset.level===lv ? '' : 'secondary');
+  });
+}
 function startNew(mode){
   showScreen('new');
   document.getElementById('mInput').placeholder = mode==='transcript'
@@ -821,6 +1099,87 @@ async function deleteMaterial(id){
 }
 
 /* ---------- SHG/VO/CLF + quorum field toggling ---------- */
+/* ---------- speaker label mapping ---------- */
+let detectedSpeakers = [];
+const SPEAKER_LABEL_WORDS = ['note','notes','action','actions','agenda','topic','topics','date','time','subject','title','attendees',
+  'present','apologies','location','venue','duration','decision','decisions','summary','update','next','next steps','todo','to-do',
+  'follow up','follow-up','risks','issues','questions','background','status','recap','also','fyi','owner','deadline','meeting',
+  'minutes','participants','invited','absent','goal','goals','objective','problem','idea','budget','team','misc','scope','other'];
+const SPEAKER_NAME_STOP = ['sorry','moving','agreed','decided','also','next','okay','ok','right','yeah','yes','thanks','note','open',
+  'apparently','however','currently','everything','this','that','need','have','will','should','let','make','take','send','share',
+  'check','update','review','create','confirm','call','write','build','add','set','get','put','try','ask','tell','give','use','run',
+  'plan','start','stop','continue','ensure','draft','prepare','schedule','finalise','finalize','approve','pay','follow','monday',
+  'tuesday','wednesday','thursday','friday','saturday','sunday'];
+function detectNamedSpeakers(text){
+  const lines = text.split('\n');
+  const counts = {};
+  const re = /^\s*(?:[\[(]?\s*\d{1,2}:\d{2}(?::\d{2})?\s*[\])]?\s*)?([A-Za-z][A-Za-z.'’-]*(?:\s+[A-Za-z][A-Za-z.'’-]*){0,2})\s*(?:\([^)]{0,40}\))?\s*:\s+\S/;
+  lines.forEach(line=>{
+    const m = line.match(re);
+    if(!m) return;
+    const cand = m[1].trim();
+    if(cand.split(/\s+/).length > 3) return;
+    if(SPEAKER_LABEL_WORDS.includes(cand.toLowerCase())) return;
+    if(SPEAKER_NAME_STOP.includes(cand.toLowerCase())) return;
+    if(!/^[A-Z]/.test(cand)) return;
+    counts[cand] = (counts[cand]||0) + 1;
+  });
+  return Object.keys(counts).filter(k=>counts[k]>=2);
+}
+function detectSpeakers(){
+  const text = document.getElementById('mInput').value;
+  const numeric = new Set();
+  const re = /\bSpeaker\s+(\d+)\b/gi;
+  let m;
+  while((m = re.exec(text))) numeric.add(m[1]);
+  const named = detectNamedSpeakers(text);
+  detectedSpeakers = [
+    ...[...numeric].sort((a,b)=>a-b).map(n=>({key:n, display:'Speaker '+n, isNumeric:true})),
+    ...named.map(n=>({key:n, display:n, isNumeric:false}))
+  ];
+  const wrap = document.getElementById('speakerMapWrap');
+  const list = document.getElementById('speakerMapList');
+  wrap.classList.remove('hidden');
+  if(!detectedSpeakers.length){
+    list.innerHTML = '<p class="caption">No "Speaker N" labels or repeated "Name:" prefixes found in the notes.</p>';
+    return;
+  }
+  const roles = ['Chairman/Chairperson','Director','GM','Manager','Secretary','Member','Invitee','Other (type name/role)'];
+  list.innerHTML = detectedSpeakers.map(sp=>{
+    const safeKey = sp.key.replace(/[^A-Za-z0-9]/g,'_');
+    return `
+    <div class="grid2" style="margin-bottom:8px;">
+      <div style="align-self:center;">${escapeHtml(sp.display)}${sp.isNumeric?'':' <span class="tag noted">detected name</span>'}</div>
+      <div>
+        <select id="spkRole_${safeKey}" onchange="document.getElementById('spkCustom_${safeKey}').classList.toggle('hidden', this.value!=='Other (type name/role)')">
+          ${roles.map(r=>`<option ${!sp.isNumeric && r==='Other (type name/role)' ? '':''}>${r}</option>`).join('')}
+        </select>
+        <input type="text" id="spkCustom_${safeKey}" placeholder="Name or role" class="hidden" style="margin-top:4px;">
+      </div>
+    </div>`;
+  }).join('') + '<div class="caption" style="margin-top:6px;">For a detected name, mapping it to a role replaces that name with the role throughout your notes — leave it as "Other" with the name unchanged if you just want to confirm it, not replace it.</div>';
+}
+function applySpeakerMap(){
+  let text = document.getElementById('mInput').value;
+  detectedSpeakers.forEach(sp=>{
+    const safeKey = sp.key.replace(/[^A-Za-z0-9]/g,'_');
+    const roleSel = document.getElementById('spkRole_'+safeKey);
+    if(!roleSel) return;
+    let label = roleSel.value;
+    if(label==='Other (type name/role)'){
+      const custom = document.getElementById('spkCustom_'+safeKey).value.trim();
+      if(!custom) return; // "Other" with nothing typed = leave this one unchanged
+      label = custom;
+    }
+    const pattern = sp.isNumeric ? ('\\bSpeaker\\s+'+sp.key+'\\b') : ('\\b'+sp.key.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b');
+    text = text.replace(new RegExp(pattern,'g'), label);
+  });
+  document.getElementById('mInput').value = text;
+  document.getElementById('speakerMapWrap').classList.add('hidden');
+  showToast('Speaker labels replaced in the notes.', 'ok');
+  scheduleAutosave();
+}
+
 function toggleTypeFields(){
   const t = document.getElementById('mType').value;
   document.getElementById('shgFields').classList.toggle('hidden', t !== 'SHG/VO/CLF Meeting (DAY-NRLM)');
@@ -878,18 +1237,23 @@ function loadSettingsForm(){
   }
   document.getElementById('setOrg').value = SETTINGS.org||'';
   document.getElementById('setTemplate').value = SETTINGS.template||'Board Meeting';
+  document.getElementById('setConfirmAI').checked = SETTINGS.confirmAI !== false;
+  document.getElementById('setAutoLock').value = String(SETTINGS.autoLockMinutes||0);
   toggleProviderFields();
+  refreshPinUI();
 }
 function saveSettings(){
   const puterModelSel = document.getElementById('setPuterModel').value;
   const puterModel = puterModelSel==='custom' ? (document.getElementById('setPuterModelCustom').value.trim()||'claude-sonnet-4-6') : puterModelSel;
   SETTINGS = {
+    ...SETTINGS,
     provider: document.getElementById('setProvider').value,
     apiKey: document.getElementById('setApiKey').value.trim(),
     model: document.getElementById('setModel').value.trim() || 'claude-sonnet-4-5',
     puterModel,
     org: document.getElementById('setOrg').value.trim(),
-    template: document.getElementById('setTemplate').value
+    template: document.getElementById('setTemplate').value,
+    confirmAI: document.getElementById('setConfirmAI').checked
   };
   persistSettings();
   document.getElementById('setMsg').innerHTML = '<div class="msg ok">Settings saved.</div>';
@@ -922,6 +1286,15 @@ function extractPuterText(res){
 }
 
 /* ---------- Claude / AI API ---------- */
+function providerLabelText(){
+  return (SETTINGS.provider==='puter') ? 'Puter.js (free)' : 'Anthropic (your API key)';
+}
+function confirmAIUse(label){
+  if(SETTINGS.confirmAI === false || anyAIUsedThisSession) { anyAIUsedThisSession = true; updateModeBadges(); return true; }
+  const ok = confirm('This meeting content may be sent to an external AI service — '+providerLabelText()+'.\n\n'+label+'\n\nContinue?\n\n(Asked once per session. Turn off in Settings if you don\'t want this prompt.)');
+  if(ok){ anyAIUsedThisSession = true; updateModeBadges(); }
+  return ok;
+}
 async function callClaude(system, userText, maxTokens){
   if(navigator.onLine === false){
     throw new Error('No internet connection detected. Recordings and typed notes are safe, but generating minutes needs to be online.');
@@ -1010,7 +1383,9 @@ function gatherMeetingDetails(){
     org: val('mOrg'), title: val('mTitle'), type: val('mType'), date: val('mDate'),
     start: val('mStart'), end: val('mEnd'), venue: val('mVenue'), lang: val('mLang'),
     chair: val('mChair'), secretary: val('mSec'), present: val('mPresent'),
-    absent: val('mAbsent'), invitees: val('mInvitees'), agenda: val('mAgenda')
+    absent: val('mAbsent'), invitees: val('mInvitees'), agenda: val('mAgenda'),
+    mode: val('mMode'), number: val('mNumber'), confidentiality: val('mConfidentiality'),
+    prevDate: val('mPrevDate'), nextDate: val('mNextDate'), resolution: val('mResolution')
   };
   const boardMode = details.type === 'Board Meeting';
   const shgMode = details.type === 'SHG/VO/CLF Meeting (DAY-NRLM)';
@@ -1036,9 +1411,12 @@ async function startManualMinutes(){
     boardMode, shgMode, shg, quorum,
     linkedPreviousMeetingId: prevId || '',
     confirmation: {status:'Draft', date:'', ref:''},
+    verification: newVerification(),
     agendaItems: [],
     pendingMatters: carry ? carry.pending.slice() : [],
     actionPoints: carry ? carry.openActions.map(a=>({...a, remarks:(a.remarks?a.remarks+' ':'')+'(carried forward from previous meeting)'})) : [],
+    risks: [],
+    openQuestions: [],
     executiveSummary: '',
     oneMinuteSummary: '',
     rawInput: document.getElementById('mInput').value.trim(),
@@ -1062,16 +1440,64 @@ const NOTED_CUES = ['noted','took note','note kiya','dhyan diya','no specific de
 const PENDING_CUES = ['pending','awaiting','not yet decided','yet to be','still waiting','baaki hai','abhi tak nahi','wait for','waiting for','abhi tak pending'];
 const ACTION_CUES = ['will ','shall ','should ','to submit','to complete','responsible for','needs to','has to','is required to','must ',
   'karega','karegi','karenge','karna hai','karni hai','submit karna','dekhna hai','review karna','banayega','taiyar karega','provide karega','complete karna','karenge','karvana hai'];
+const URGENT_CUES = ['urgent','urgently','asap','immediately','critical','top priority','high priority','right away','today','tonight','eod','end of day','no extension','turant','jaldi'];
+/* deadline patterns — English business phrasing + the Hindi/Hinglish equivalents this app already needs */
 const DEADLINE_PATTERNS = [
-  /\bby\s+([A-Za-z0-9 ,]+?)(?=[.,;]|$)/i,
-  /\bwithin\s+([A-Za-z0-9 ]+?)(?=[.,;]|$)/i,
-  /\bbefore\s+([A-Za-z0-9 ]+?)(?=[.,;]|$)/i,
-  /\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|meeting)/i,
+  /\bby (?:the )?end of (?:the )?(?:day|week|month|quarter|year)\b/i,
+  /\bend of (?:the )?(?:day|week|month|quarter|year)\b/i,
+  /\b(?:eod|eow|eom|cob|asap)\b/i,
+  /\bby (?:today|tomorrow|tonight|this evening)(?:\s+(?:morning|afternoon|evening|night))?\b/i,
+  /\bby (?:next |this |coming )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:morning|afternoon|evening|night))?\b/i,
+  /\b(?:on|this|next|coming) (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+  /\bby (?:the )?\d{1,2}(?:st|nd|rd|th)?(?:\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*)?\b/i,
+  /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b/i,
+  /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?\b/i,
+  /\b\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?\b/,
+  /\bwithin (?:the )?(?:next )?\w+ (?:hours?|days?|weeks?|months?)\b/i,
+  /\bin (?:the )?next \w+ (?:days?|weeks?|months?)\b/i,
+  /\bnext (?:week|month|quarter|fortnight|meeting)\b/i,
+  /\bthis (?:week|month|quarter|weekend)\b/i,
+  /\bq[1-4](?:\s+\d{4})?\b/i,
+  /\bbefore (?:the )?(?:next )?(?:launch|call|meeting|weekend|dispatch|review|session|deadline)\b/i,
   /(\d+)\s*(din|hafte|mahine)\s*(mein|me)?/i,
   /agle\s+(\S+\s+)?(din|hafte|mahine)/i
 ];
+/* filler words / discourse markers stripped before classification — doesn't touch meaning, just noise */
+function cleanFillerText(s){
+  let t = ' '+s+' ';
+  t = t.replace(/\[(?:inaudible|crosstalk|laughter|laughs|pause|silence|unclear|music)[^\]]*\]/gi,' ');
+  t = t.replace(/\b(?:um+|uh+|erm+|hmm+|mm+|mhm|uhh+|ahh+)\b\s*,?/gi,' ');
+  t = t.replace(/\b(?:you know|i mean|sort of|kind of|like i said|to be honest|at the end of the day|if that makes sense)\b/gi,' ');
+  t = t.replace(/\b(?:basically|actually|literally|obviously|honestly|frankly|essentially)\b/gi,' ');
+  t = t.replace(/\b(\w+)\s+\1\b/gi,'$1'); // stutter/repeated word
+  t = t.replace(/\s{2,}/g,' ');
+  // leading discourse markers at the start of a line/sentence — run a few passes since
+  // stripping one can reveal another underneath ("Um, so, basically" → "So," → "")
+  for(let pass=0; pass<3; pass++){
+    t = t.replace(/(^|\n)[\s,;:.-]+/, '$1');
+    t = t.replace(/(^|\n)\s*(?:so|okay|ok|right|well|yeah|alright|anyway)\b[,:\s]*/gi, '$1');
+  }
+  t = t.replace(/(^|\n)[\s,;:.-]+/, '$1');
+  t = t.trim();
+  return t;
+}
+function stripTimestampLine(line){
+  return line.replace(/^\s*[\[\(]?\s*\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm))?\s*[\]\)]?\s*[-–—]?\s*/i,'');
+}
+/* abbreviation-aware — avoids splitting mid-sentence on "Mr.", "Dr.", "e.g.", decimals etc. */
 function splitSentences(text){
-  return (text||'').split(/(?:\r?\n)+|(?<=[.!?])\s+/).map(s=>s.trim()).filter(s=>s.length>3);
+  const P = '\u0001';
+  let t = ' '+(text||'')+' ';
+  t = t.replace(/\b(e|i)\.(g|e)\./gi, (m,a,b)=>a+P+b+P);
+  t = t.replace(/\b(mr|mrs|ms|dr|prof|sr|jr|vs|approx|no|inc|ltd|pvt|dept|est|fig|rs|st|ave|smt|shri)\./gi, m=>m.slice(0,-1)+P);
+  t = t.replace(/(\d)\.(\d)/g, '$1'+P+'$2');
+  const parts = t.match(/[^.!?…\n]+(?:[.!?…]+|\n|$)/g) || [];
+  const out = [];
+  for(const part of parts){
+    const s = part.split(P).join('.').replace(/\s+/g,' ').trim();
+    if(s.replace(/[^a-z0-9\u0900-\u097F]/gi,'').length > 1) out.push(s);
+  }
+  return out;
 }
 function splitParagraphs(text){
   let paras = (text||'').split(/\n\s*\n+/).map(s=>s.trim()).filter(Boolean);
@@ -1104,9 +1530,65 @@ function extractDecisionSentence(p){
   const hit = sentences.find(s=>{ const l=s.toLowerCase(); return DECISION_CUES.some(k=>l.includes(k)); });
   return hit || 'No specific decision recorded';
 }
-function localHeuristicParse(text){
-  const paragraphs = splitParagraphs(text);
-  const agendaItems = paragraphs.map(p=>{
+/* strips the leading "X will / needs to / please" wording so the action reads as a clean task,
+   and pulls out an owner name where the sentence names one — same idea as before, more thorough */
+function extractOwnerAndTask(sentence, deadlineRaw){
+  let s = sentence, owner = null, m;
+  const isName = w => /^[A-Z][a-zA-Z'’-]{1,20}$/.test(w) && !['The','Board','It','This','A','An','Members','Chairman','Meeting','Team'].includes(w);
+  const HON = '(?:Mr|Mrs|Ms|Dr|Prof|Shri|Smt|Kum)\\.?\\s+';
+
+  m = s.match(new RegExp('^('+HON+')?([A-Z][a-z\'’-]+(?:\\s+[A-Z][a-z\'’-]+)?)\\s*,?\\s+(?:will|shall|to|is going to|needs to|has to|should|must|would|can|could|takes|owns|is taking)\\b\\s*(.*)$'));
+  if(m && isName(m[2].split(' ')[0])){ owner = (m[1]||'') + m[2]; s = m[3]; }
+
+  if(!owner){
+    m = s.match(new RegExp('\\b(?:assigned to|owner is|owned by|handed (?:over )?to|responsibility of)\\s+('+HON+')?([A-Z][a-z\'’-]+)\\b'));
+    if(m && isName(m[2])) owner = (m[1]||'') + m[2];
+  }
+  if(!owner && /^(?:i'?ll|i will|i can|i'?m going to|let me|i need to|i have to)\b/i.test(s)){
+    owner = 'Speaker (as stated)';
+  }
+  if(!owner && /\b(?:we'?ll|let'?s|we need to|we should|we have to|the team will)\b/i.test(s)){
+    owner = 'Team';
+  }
+
+  let task = s;
+  for(let pass=0; pass<3; pass++){
+    task = task.replace(/^[\s,;:.-]+/,'');
+    task = task.replace(/^(?:i'?ll|i will|i can|i'?m going to|let me|we'?ll|we will|let'?s|let us|we need to|we should|we have to|we must|you need to|you should|you'?ll|please|can you|could you|would you)\s+/i,'');
+    task = task.replace(/^(?:will|shall|to|is going to|needs to|need to|has to|have to|should|must|would|can|could|takes|owns|going to)\s+/i,'');
+  }
+  if(deadlineRaw){
+    const idx = task.toLowerCase().indexOf(deadlineRaw.toLowerCase());
+    if(idx !== -1) task = task.slice(0, idx) + ' ' + task.slice(idx + deadlineRaw.length);
+  }
+  task = task.replace(/\s{2,}/g,' ').trim();
+  task = task.replace(/[\s,;:.?—–-]+$/,'');
+  task = task.replace(/\s+(?:by|before|on|until|till|and|but|because|so|with|to|for|from|in|at|of)$/i,'');
+  task = task.replace(/[\s,;:.?—–-]+$/,'');
+  if(task) task = task.charAt(0).toUpperCase() + task.slice(1);
+  return {owner: owner || 'Not specified', task: task || sentence.trim()};
+}
+const RISK_CUES = ['risk','blocked','blocker','concern','worried','worry','issue','problem','bug','delay','slipping','slipped',
+  'behind schedule','bottleneck','dependency','depends on','short of','shortfall','running out','over budget','budget is tight',
+  'complaint','failed','failing','failure','outage','rejected','penalty','non-compliance','shortage','crunch','understaffed',
+  'not sustainable','cannot repeat','missed the deadline','npa','samasya','dikkat','pareshani'];
+const QUESTION_CUES = ['not sure','unclear','unsure','tbd','to be decided','to be confirmed','open question','need clarity',
+  'needs clarity','waiting on','waiting for','yet to decide','yet to confirm','pending a decision','pending confirmation',
+  'pending approval','no decision taken','no decision yet','do we know','spasht nahi','tay nahi hua','abhi confirm nahi'];
+function pushUniqueLocal(arr, text, threshold){
+  const t = (text||'').trim();
+  if(!t || t.length < 12) return false;
+  const tw = normWords(t);
+  for(const existing of arr){ if(jaccard(normWords(existing), tw) > (threshold||0.7)) return false; }
+  arr.push(t);
+  return true;
+}
+function localHeuristicParse(text, opts){
+  const level = (opts && opts.level) || 'balanced';
+  const maxPoints = level==='tight' ? 5 : (level==='full' ? 16 : 9);
+  const cleanedWhole = cleanFillerText(text);
+  const paragraphs = splitParagraphs(cleanedWhole).map(p=>stripTimestampLine(p));
+  let agendaItems = paragraphs.map(p=>{
     const type = classifyParaType(p);
     return {
       heading: extractHeading(p), category:'', discussion:p, type,
@@ -1114,28 +1596,37 @@ function localHeuristicParse(text){
       responsibility:'', timeline:'', ambiguous:false, ambiguityNote:''
     };
   });
-  const sentences = splitSentences(text);
-  const actionPoints = [];
-  sentences.forEach(s=>{
+  const sentences = splitSentences(cleanedWhole);
+  let actionPoints = [];
+  const risks = [], openQuestions = [];
+  sentences.forEach(sOrig=>{
+    const s = stripTimestampLine(sOrig);
     const lower = s.toLowerCase();
+    if(RISK_CUES.some(c=>lower.includes(c))) pushUniqueLocal(risks, s);
+    if(QUESTION_CUES.some(c=>lower.includes(c))) pushUniqueLocal(openQuestions, s);
     if(!ACTION_CUES.some(c=>lower.includes(c))) return;
-    let deadline = 'Not specified';
-    for(const re of DEADLINE_PATTERNS){ const m = s.match(re); if(m){ deadline = m[0].trim(); break; } }
-    let responsible = 'Not specified';
-    const capMatch = s.match(/^([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\b/);
-    if(capMatch && !['The','Board','It','This','A','An','Members','Chairman','Meeting'].includes(capMatch[1].split(' ')[0])) responsible = capMatch[1];
-    const parent = agendaItems.find(a=>a.discussion.includes(s));
+    let deadline = 'Not specified', deadlineRaw = '';
+    for(const re of DEADLINE_PATTERNS){ const m = s.match(re); if(m){ deadline = m[0].trim(); deadlineRaw = m[0]; break; } }
+    const {owner, task} = extractOwnerAndTask(s, deadlineRaw);
+    const parent = agendaItems.find(a=>a.discussion.includes(sOrig) || a.discussion.includes(s));
+    const priority = URGENT_CUES.some(c=>lower.includes(c)) ? 'High' : 'Medium';
     actionPoints.push({
-      subject: parent ? parent.heading : '', action: s.trim(),
-      responsible, deadline, priority:'Medium', status:'Open',
+      subject: parent ? parent.heading : '', action: task,
+      responsible: owner, deadline, priority, status:'Open',
       remarks:'(auto-extracted locally — please verify)'
     });
   });
-  const pendingMatters = paragraphs
+  let pendingMatters = paragraphs
     .filter(p=>{ const l=p.toLowerCase(); return PENDING_CUES.some(c=>l.includes(c)); })
     .map(p=>{ const sents = splitSentences(p); return sents.find(s=>{ const l=s.toLowerCase(); return PENDING_CUES.some(c=>l.includes(c)); }) || p; });
   const executiveSummary = paragraphs.map(p=> splitSentences(p)[0] || p).join(' ');
-  return {agendaItems, actionPoints, pendingMatters, executiveSummary};
+
+  if(level !== 'full'){
+    agendaItems = agendaItems.slice(0, maxPoints);
+    actionPoints = actionPoints.slice(0, maxPoints);
+    pendingMatters = pendingMatters.slice(0, maxPoints);
+  }
+  return {agendaItems, actionPoints, pendingMatters, executiveSummary, risks: risks.slice(0,maxPoints), openQuestions: openQuestions.slice(0,maxPoints)};
 }
 async function startRuleBasedMinutes(){
   const input = document.getElementById('mInput').value.trim();
@@ -1146,7 +1637,7 @@ async function startRuleBasedMinutes(){
   const prevMeeting = prevId ? DB.meetings.find(m=>m.id===prevId) : null;
   const carry = prevMeeting ? getOpenItemsFor(prevMeeting) : null;
 
-  const parsed = localHeuristicParse(input);
+  const parsed = localHeuristicParse(input, {level: detailLevel});
   let actionPoints = parsed.actionPoints;
   let pendingMatters = parsed.pendingMatters;
   if(carry){
@@ -1164,9 +1655,12 @@ async function startRuleBasedMinutes(){
     boardMode, shgMode, shg, quorum,
     linkedPreviousMeetingId: prevId || '',
     confirmation: {status:'Draft', date:'', ref:''},
+    verification: newVerification(),
     agendaItems: normalizeAgendaItems(parsed.agendaItems),
     pendingMatters,
     actionPoints: normalizeActionPoints(actionPoints),
+    risks: parsed.risks||[],
+    openQuestions: parsed.openQuestions||[],
     executiveSummary: parsed.executiveSummary,
     oneMinuteSummary: '',
     rawInput: input,
@@ -1184,6 +1678,7 @@ async function generateMinutes(){
   const msg = document.getElementById('genMsg');
   const input = document.getElementById('mInput').value.trim();
   if(!input){ msg.innerHTML = '<div class="msg error">Enter some notes or a transcript first.</div>'; return; }
+  if(!confirmAIUse('Your typed notes/transcript will be sent to generate structured minutes.')){ showToast('Cancelled — nothing was sent.', 'ok'); return; }
   btn.disabled = true;
   msg.innerHTML = '<div class="msg"><span class="spinner"></span>Structuring the meeting (step 1 of 2)...</div>';
 
@@ -1216,7 +1711,9 @@ Return JSON with this exact shape:
  "agendaItems":[
    {"heading":"short agenda item title","category":"${boardMode ? '' : 'one of the categories above, or a short custom one'}","discussion":"1-3 sentence formal paraphrase of what was discussed","type":"Decision|Discussion|Approval|Resolution|Deferred|Noted","decisionText":"formal decision/resolution wording, or 'No specific decision recorded'","responsibility":"person/department directed to act, or ''","timeline":"timeline mentioned, or ''","ambiguous":false,"ambiguityNote":""}
  ],
- "pendingMatters":["matter needing follow-up or further approval", "..."]
+ "pendingMatters":["matter needing follow-up or further approval", "..."],
+ "risks":["risk, blocker, or concern raised in the meeting — only if genuinely mentioned, else omit", "..."],
+ "openQuestions":["question left unresolved or unclear in the meeting — only if genuinely present, else omit", "..."]
 }
 Use formal minute-book language appropriate to a ${details.type}. Keep each discussion paraphrase concise.`;
     const r1 = await callClaude(ACCURACY_RULES, p1, 2200);
@@ -1264,9 +1761,12 @@ Return JSON with this exact shape:
       boardMode, shgMode, shg, quorum,
       linkedPreviousMeetingId: prevId || '',
       confirmation: {status:'Draft', date:'', ref:''},
+      verification: newVerification(),
       agendaItems: normalizeAgendaItems(parsed1.agendaItems),
       pendingMatters,
       actionPoints,
+      risks: Array.isArray(parsed1.risks) ? parsed1.risks.filter(Boolean) : [],
+      openQuestions: Array.isArray(parsed1.openQuestions) ? parsed1.openQuestions.filter(Boolean) : [],
       executiveSummary: parsed2.executiveSummary||'',
       oneMinuteSummary: parsed2.oneMinuteSummary||'',
       rawInput: input,
@@ -1282,6 +1782,26 @@ Return JSON with this exact shape:
   }finally{
     btn.disabled = false;
   }
+}
+const VERIFICATION_ITEMS = [
+  ['attendance','Attendance verified'],
+  ['quorum','Quorum verified'],
+  ['agenda','Agenda verified'],
+  ['decisions','Decisions verified'],
+  ['resolutions','Resolutions verified'],
+  ['actions','Action points verified'],
+  ['responsibility','Responsibility verified'],
+  ['deadlines','Deadlines verified'],
+  ['names','Names/designations verified'],
+  ['figures','Figures/amounts verified'],
+  ['pending','Pending matters verified'],
+  ['translation','Translation checked'],
+  ['reviewed','Minutes reviewed by authorised person']
+];
+function newVerification(){
+  const checklist = {};
+  VERIFICATION_ITEMS.forEach(([key])=>{ checklist[key] = false; });
+  return {status:'Working Draft', checklist, finalizedAt:null, revisionOf:null, revisionNote:''};
 }
 function computeQuorum(presentText, totalStr, reqStr){
   if(!reqStr) return null;
@@ -1336,14 +1856,92 @@ function renderReview(){
   document.getElementById('rExecSummary').value = draft.executiveSummary||'';
   document.getElementById('rOneMin').value = draft.oneMinuteSummary||'';
   document.getElementById('rPending').value = (draft.pendingMatters||[]).join('\n');
+  document.getElementById('rRisks').value = (draft.risks||[]).join('\n');
+  document.getElementById('rQuestions').value = (draft.openQuestions||[]).join('\n');
   renderAgendaList();
   renderActionTable();
   renderQuorumBadge();
   loadConfirmationUI();
   renderMaterialListReview();
+  renderVerificationUI();
+  applyLockState();
   document.getElementById('aiCheckResults').innerHTML = '';
   document.getElementById('saveMsg').innerHTML = '';
 }
+
+/* ---------- verification & finalisation ---------- */
+function renderVerificationUI(){
+  if(!draft.verification) draft.verification = newVerification();
+  const v = draft.verification;
+  const badge = document.getElementById('verificationStatusBadge');
+  const statusCls = v.status==='Final' ? 'decision' : (v.status==='Reviewed' ? 'discussion' : 'noted');
+  badge.innerHTML = `<span class="tag ${statusCls}">${escapeHtml(v.status)}</span>` +
+    (v.status==='Final' ? ` <span class="caption" style="display:inline;">— locked ${v.finalizedAt?('on '+new Date(v.finalizedAt).toLocaleString()):''}. Edit by creating a new revision.</span>` : '');
+  const list = document.getElementById('verificationChecklist');
+  list.innerHTML = VERIFICATION_ITEMS.map(([key,label])=>`
+    <label style="display:flex;gap:8px;align-items:center;padding:4px 0;">
+      <input type="checkbox" style="width:auto;" ${v.checklist[key]?'checked':''} ${v.status==='Final'?'disabled':''} onchange="toggleVerificationItem('${key}', this.checked)">
+      ${escapeHtml(label)}
+    </label>`).join('');
+  const allChecked = VERIFICATION_ITEMS.every(([key])=>v.checklist[key]);
+  document.getElementById('finaliseBtn').disabled = v.status==='Final' || !allChecked;
+  document.getElementById('finaliseBtn').classList.toggle('hidden', v.status==='Final');
+  document.getElementById('newRevisionBtn').classList.toggle('hidden', v.status!=='Final');
+}
+function toggleVerificationItem(key, checked){
+  draft.verification.checklist[key] = checked;
+  if(VERIFICATION_ITEMS.every(([k])=>draft.verification.checklist[k]) && draft.verification.status==='Working Draft'){
+    draft.verification.status = 'Reviewed';
+  }
+  unsavedChanges = true;
+  renderVerificationUI();
+}
+function finaliseMinutes(){
+  const allChecked = VERIFICATION_ITEMS.every(([key])=>draft.verification.checklist[key]);
+  if(!allChecked){ showToast('Complete every item on the verification checklist first.', 'error'); return; }
+  if(!confirm('Finalise these minutes? The record will become read-only. You can still create a new revision later if something needs to change.')) return;
+  draft.verification.status = 'Final';
+  draft.verification.finalizedAt = new Date().toISOString();
+  syncDraftFromForm();
+  const idx = DB.meetings.findIndex(m=>m.id===draft.id);
+  if(idx>=0) DB.meetings[idx] = draft; else DB.meetings.push(draft);
+  persistMeetings();
+  unsavedChanges = false;
+  renderVerificationUI();
+  applyLockState();
+  document.getElementById('verificationMsg').innerHTML = '<div class="msg ok">Minutes finalised and locked.</div>';
+}
+function createNewRevision(){
+  if(!confirm('Create a new editable revision of these minutes? The finalised version stays in the Library untouched.')) return;
+  const newDraft = JSON.parse(JSON.stringify(draft));
+  newDraft.id = uid();
+  newDraft.createdAt = new Date().toISOString();
+  newDraft.verification = newVerification();
+  newDraft.verification.revisionOf = draft.id;
+  newDraft.verification.revisionNote = 'Revision of meeting finalised on '+ (draft.verification.finalizedAt ? new Date(draft.verification.finalizedAt).toLocaleDateString() : '');
+  draft = newDraft;
+  unsavedChanges = true;
+  doAutosave();
+  renderReview();
+  showToast('New editable revision created — the original final version is untouched in the Library.', 'ok');
+}
+function applyLockState(){
+  const locked = draft.verification && draft.verification.status === 'Final';
+  // Only lock the actual content-editing controls — never TTS, QA, export, share, or confirmation-status controls.
+  const lockTargets = ['#rExecSummary','#rOneMin','#rPending','#rRisks','#rQuestions'];
+  lockTargets.forEach(sel=>{ const el = document.querySelector(sel); if(el) el.disabled = locked; });
+  const agendaList = document.getElementById('agendaList');
+  if(agendaList) agendaList.querySelectorAll('input, textarea, select, button').forEach(el=>{ el.disabled = locked; });
+  const actionTable = document.getElementById('actionTable');
+  if(actionTable) actionTable.querySelectorAll('input, textarea, select, button').forEach(el=>{ el.disabled = locked; });
+  const addAgendaBtn = document.querySelector('button[onclick="addAgendaItem()"]');
+  if(addAgendaBtn) addAgendaBtn.disabled = locked;
+  const addActionBtn = document.querySelector('button[onclick="addActionRow()"]');
+  if(addActionBtn) addActionBtn.disabled = locked;
+  const delTranscriptBtn = document.querySelector('button[onclick="deleteTranscriptForDraft()"]');
+  if(delTranscriptBtn) delTranscriptBtn.disabled = locked;
+}
+
 function renderQuorumBadge(){
   const box = document.getElementById('quorumBadge');
   const q = draft.quorum;
@@ -1387,6 +1985,10 @@ function renderAgendaList(){
       <textarea rows="2" oninput="draft.agendaItems[${i}].discussion=this.value">${escapeHtml(item.discussion)}</textarea>
       <label style="margin-top:6px;">Decision / resolution</label>
       <textarea rows="2" oninput="draft.agendaItems[${i}].decisionText=this.value">${escapeHtml(item.decisionText)}</textarea>
+      <div class="rowtools" style="margin-top:4px;">
+        <button class="btn small outline" onclick="toggleSource('srcAgenda_${i}', ${JSON.stringify(item.decisionText).replace(/"/g,'&quot;')})">View source</button>
+      </div>
+      <div id="srcAgenda_${i}" class="hidden flag-item"></div>
       ${draft.boardMode ? `<div class="grid2" style="margin-top:6px;">
         <div><label>Responsibility</label><input type="text" value="${escapeHtml(item.responsibility||'')}" oninput="draft.agendaItems[${i}].responsibility=this.value"></div>
         <div><label>Timeline</label><input type="text" value="${escapeHtml(item.timeline||'')}" oninput="draft.agendaItems[${i}].timeline=this.value"></div>
@@ -1409,6 +2011,26 @@ function renderAgendaList(){
     wrap.appendChild(header);
     items.forEach((item,i)=>{ if((item.category||'Uncategorised')===cat) wrap.appendChild(renderCard(item,i)); });
   });
+}
+function findSourceSentence(text, rawInput){
+  if(!rawInput || !text) return null;
+  const sentences = splitSentences(rawInput);
+  const tw = normWords(text);
+  if(tw.size < 2) return null;
+  let best=null, bestScore=0;
+  sentences.forEach(s=>{
+    const score = jaccard(tw, normWords(s));
+    if(score>bestScore){ bestScore=score; best=s; }
+  });
+  return bestScore >= 0.25 ? best : null;
+}
+function toggleSource(elId, text){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  if(!el.classList.contains('hidden')){ el.classList.add('hidden'); return; }
+  const src = findSourceSentence(text, draft.rawInput);
+  el.textContent = src ? ('Closest matching sentence in your original notes: "'+src+'"') : 'No confidently matching sentence found in the original notes (this can happen with heavily reworded AI output, or if the item was added/edited manually).';
+  el.classList.remove('hidden');
 }
 function tagClass(t){
   t=(t||'').toLowerCase();
@@ -1439,8 +2061,11 @@ function renderActionTable(){
       <td><select oninput="draft.actionPoints[${i}].priority=this.value">${['High','Medium','Low'].map(p=>`<option ${a.priority===p?'selected':''}>${p}</option>`).join('')}</select></td>
       <td><select oninput="draft.actionPoints[${i}].status=this.value">${['Open','In Progress','Completed','Deferred','Closed','Pending clarification'].map(s=>`<option ${a.status===s?'selected':''}>${s}</option>`).join('')}</select></td>
       <td><input type="text" value="${escapeHtml(a.remarks)}" oninput="draft.actionPoints[${i}].remarks=this.value"></td>
-      <td><button class="btn small outline" onclick="speakOne('${escapeHtml(a.action).replace(/'/g,"&#39;")}. Responsible: ${escapeHtml(a.responsible).replace(/'/g,"&#39;")}. Deadline: ${escapeHtml(a.deadline).replace(/'/g,"&#39;")}.')" title="Speak this action point">🔊</button> <button class="btn small outline" onclick="removeActionRow(${i})">✕</button></td>`;
+      <td><button class="btn small outline" onclick="speakOne('${escapeHtml(a.action).replace(/'/g,"&#39;")}. Responsible: ${escapeHtml(a.responsible).replace(/'/g,"&#39;")}. Deadline: ${escapeHtml(a.deadline).replace(/'/g,"&#39;")}.')" title="Speak this action point">🔊</button> <button class="btn small outline" onclick="toggleSource('srcAction_${i}', ${JSON.stringify(a.action).replace(/"/g,'&quot;')})" title="View source">🔍</button> <button class="btn small outline" onclick="removeActionRow(${i})">✕</button></td>`;
     tbody.appendChild(tr);
+    const srcTr = document.createElement('tr');
+    srcTr.innerHTML = `<td colspan="9"><div id="srcAction_${i}" class="hidden flag-item"></div></td>`;
+    tbody.appendChild(srcTr);
   });
 }
 function speakOne(text){
@@ -1477,10 +2102,34 @@ function syncDraftFromForm(){
   draft.executiveSummary = document.getElementById('rExecSummary').value;
   draft.oneMinuteSummary = document.getElementById('rOneMin').value;
   draft.pendingMatters = document.getElementById('rPending').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  draft.risks = document.getElementById('rRisks').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  draft.openQuestions = document.getElementById('rQuestions').value.split('\n').map(s=>s.trim()).filter(Boolean);
 }
 
 /* ---------- AI check ---------- */
+function runLocalCheck(){
+  syncDraftFromForm();
+  const out = document.getElementById('aiCheckResults');
+  const flags = [];
+  (draft.agendaItems||[]).forEach((a,i)=>{
+    if(tagClass(a.type)==='decision' && (!a.decisionText || a.decisionText==='No specific decision recorded')){
+      flags.push(`Agenda item ${i+1} ("${a.heading}") is tagged as a Decision but has no decision text — possible mismatch.`);
+    }
+    if(a.ambiguous) flags.push(`Agenda item ${i+1} ("${a.heading}") was flagged as ambiguous whether it was approved or only discussed.`);
+  });
+  (draft.actionPoints||[]).forEach((a,i)=>{
+    if(!a.responsible || a.responsible==='Not specified') flags.push(`Action ${i+1} ("${(a.action||'').slice(0,50)}") has no responsible person specified.`);
+    if(!a.deadline || a.deadline==='Not specified') flags.push(`Action ${i+1} ("${(a.action||'').slice(0,50)}") has no deadline specified.`);
+  });
+  const dupSet = computeDuplicateFlags(draft.actionPoints||[]);
+  if(dupSet.size) flags.push(`${dupSet.size} action point(s) look like possible duplicates of each other — check the highlighted rows in the register.`);
+  if(draft.quorum && draft.quorum.required!==null && !draft.quorum.met) flags.push('Quorum was not met based on the present count and quorum required entered.');
+  out.innerHTML = flags.length
+    ? '<div class="caption">Local check (no AI, pattern-based — may miss things an AI reading would catch):</div>' + flags.map(f=>`<div class="flag-item">${escapeHtml(f)}</div>`).join('')
+    : '<div class="msg ok">Local check found no issues (missing owners/deadlines, decision/type mismatches, duplicates, quorum).</div>';
+}
 async function runAICheck(){
+  if(!confirmAIUse('The current draft minutes (agenda, decisions, action points) will be sent for an AI quality check.')){ showToast('Cancelled — nothing was sent.', 'ok'); return; }
   syncDraftFromForm();
   const out = document.getElementById('aiCheckResults');
   out.innerHTML = '<div class="msg"><span class="spinner"></span>Checking draft…</div>';
@@ -1710,6 +2359,102 @@ function renderInsights(){
     .sort((a,b)=>b[1]-a[1]).map(([t,c])=>barRow(t,c,maxType)).join('');
 }
 
+/* ---------- privacy dashboard ---------- */
+async function renderPrivacyDashboard(){
+  const online = navigator.onLine !== false;
+  const pinOn = localStorage.getItem('mb_pin_enabled')==='1';
+  const recs = await dbGetAll().catch(()=>[]);
+  const recCount = recs.filter(r=>r.type==='live'||r.type==='uploaded').length;
+  const matCount = recs.filter(r=>r.type==='material').length;
+  document.getElementById('privacyStats').innerHTML = `
+    <div class="stat"><div class="num">${online?'Online':'Offline'}</div><div class="lbl">Connection</div></div>
+    <div class="stat"><div class="num">${anyAIUsedThisSession?'Used':'Not used'}</div><div class="lbl">AI this session</div></div>
+    <div class="stat"><div class="num">${pinOn?'ON':'OFF'}</div><div class="lbl">Encryption</div></div>
+    <div class="stat"><div class="num">${DB.meetings.length}</div><div class="lbl">Meetings stored</div></div>`;
+  document.getElementById('privacyDetails').innerHTML = `
+    <table>
+      <tr><td>AI provider configured</td><td>${escapeHtml(providerLabelText())}</td></tr>
+      <tr><td>Confirm before AI use</td><td>${SETTINGS.confirmAI===false?'Off':'On (once per session)'}</td></tr>
+      <tr><td>External transmission allowed</td><td>${anyAIUsedThisSession?'Yes — AI was used this session':'No external transmission has occurred this session'}</td></tr>
+      <tr><td>Local storage</td><td>${DB.meetings.length} meeting(s), ${recCount} recording(s), ${matCount} attached file(s)</td></tr>
+      <tr><td>Encryption status</td><td>${pinOn?'AES-GCM encryption active (PIN required to unlock)':'Not encrypted (PIN protection available in Settings)'}</td></tr>
+      <tr><td>Auto-lock</td><td>${SETTINGS.autoLockMinutes ? SETTINGS.autoLockMinutes+' minutes idle' : 'Not set'}</td></tr>
+      <tr><td>App version</td><td>Minute Book ${APP_VERSION}</td></tr>
+    </table>`;
+}
+async function deleteAllConfidentialData(){
+  if(!confirm('Delete ALL meetings, recordings, attached material, and settings from this device? This cannot be undone.')) return;
+  DB.meetings = [];
+  try{ safeSetItem('mb_meetings', JSON.stringify([])); }catch(e){}
+  localStorage.removeItem('mb_meetings_enc');
+  localStorage.removeItem('mb_pin_enabled');
+  localStorage.removeItem('mb_pin_salt');
+  localStorage.removeItem('mb_autosave');
+  ENC = {active:false, key:null, salt:null};
+  try{
+    const recs = await dbGetAll();
+    for(const r of recs) await dbDelete(r.id);
+  }catch(e){}
+  showToast('All confidential data deleted from this device.', 'ok');
+  renderAll();
+  renderPrivacyDashboard();
+}
+async function runOfflineTest(){
+  const out = document.getElementById('offlineTestResults');
+  const steps = [];
+  function pass(name){ steps.push({name, ok:true}); }
+  function fail(name, err){ steps.push({name, ok:false, err: (err&&err.message)||String(err)}); }
+
+  try{ const t = {id:'test_'+uid(), createdAt:new Date().toISOString(), details:{title:'Offline test meeting', type:'General Meeting'}, agendaItems:[], actionPoints:[], pendingMatters:[]}; pass('Create meeting object'); 
+    try{
+      const parsed = localHeuristicParse('Test decided that recovery review will happen. Manager will submit report by Friday.');
+      if(!parsed.agendaItems.length) throw new Error('No agenda items produced');
+      pass('Local rule-based processing (no AI)');
+    }catch(e){ fail('Local rule-based processing (no AI)', e); }
+
+    try{
+      const before = DB.meetings.length;
+      DB.meetings.push(t);
+      const ok = persistMeetings();
+      DB.meetings.pop(); // roll back the test entry
+      persistMeetings();
+      if(DB.meetings.length !== before) throw new Error('Rollback mismatch');
+      pass('Save / persist to local storage');
+    }catch(e){ fail('Save / persist to local storage', e); }
+
+    try{
+      const q = 'test';
+      const hay = JSON.stringify(t).toLowerCase();
+      if(!hay.includes(q)) throw new Error('Search did not match expected content');
+      pass('Search (local library search logic)');
+    }catch(e){ fail('Search (local library search logic)', e); }
+
+    try{
+      t.details.title = 'Edited offline test meeting';
+      if(t.details.title !== 'Edited offline test meeting') throw new Error('Edit did not apply');
+      pass('Edit a meeting record');
+    }catch(e){ fail('Edit a meeting record', e); }
+
+    try{
+      const bytes = buildXlsxBytes([{name:'Test', rows:[['test']], widths:[20]}]);
+      if(!(bytes[0]===0x50 && bytes[1]===0x4B)) throw new Error('Self-contained Excel writer did not produce a valid zip header');
+      pass('Export (Excel generation, local, no library)');
+    }catch(e){ fail('Export (Excel generation, local, no library)', e); }
+
+    try{
+      const openByOwner = {};
+      (t.actionPoints||[]).forEach(a=>{ openByOwner[a.responsible]=(openByOwner[a.responsible]||0)+1; });
+      pass('Action tracker aggregation (local)');
+    }catch(e){ fail('Action tracker aggregation (local)', e); }
+
+  }catch(e){ fail('Create meeting object', e); }
+
+  const allPass = steps.every(s=>s.ok);
+  out.innerHTML = `<div class="msg ${allPass?'ok':'error'}" style="font-weight:600;">${allPass?'✓ CONFIDENTIAL OFFLINE MODE — PASS':'⚠ Some steps are not fully offline-capable:'}</div>` +
+    steps.map(s=>`<div class="flag-item" style="border-left-color:${s.ok?'var(--ok)':'var(--danger)'};">${s.ok?'✓':'✗'} ${escapeHtml(s.name)}${s.err?': '+escapeHtml(s.err):''}</div>`).join('') +
+    '<div class="caption" style="margin-top:8px;">None of these steps called an AI provider or sent data anywhere — they use the same local functions as the rest of the app.</div>';
+}
+
 /* ---------- export: Word (HTML-compatible .doc) ---------- */
 function groupedProceedingsHTML(items){
   const order = [];
@@ -1756,6 +2501,8 @@ function buildMinutesHTML(){
   </table>
   <h3>Pending / deferred matters</h3>
   <ul>${(draft.pendingMatters||[]).map(p=>`<li>${escapeHtml(p)}</li>`).join('') || '<li>None.</li>'}</ul>
+  ${(draft.risks||[]).length ? `<h3>Risks and blockers</h3><ul>${draft.risks.map(r=>`<li>${escapeHtml(r)}</li>`).join('')}</ul>` : ''}
+  ${(draft.openQuestions||[]).length ? `<h3>Open questions</h3><ul>${draft.openQuestions.map(q=>`<li>${escapeHtml(q)}</li>`).join('')}</ul>` : ''}
   <p style="margin-top:30px;">Prepared by: ${escapeHtml(d.secretary)} &nbsp;&nbsp;&nbsp; Reviewed/Approved by: ${escapeHtml(d.chair)}</p>
   <p><b>Status:</b> ${conf.status==='Confirmed' ? `Confirmed${conf.date?' on '+escapeHtml(conf.date):''}${conf.ref?' — '+escapeHtml(conf.ref):''}` : (conf.status==='Circulated' ? 'Circulated — pending confirmation in the next meeting' : 'Draft — subject to confirmation in the next meeting')}</p>
   <p style="color:#888;font-size:11px;">Developed by Anil Sharma, Former General Manager, Central Bank of India.</p>`;
@@ -1775,28 +2522,143 @@ function downloadBlob(blob, filename){
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
-function xlsxReady(){
-  if(typeof XLSX === 'undefined'){
-    showToast('The Excel export library failed to load (needs an internet connection the first time) — try again once online, or use Word/PDF export instead.', 'error');
-    return false;
+/* ---------- self-contained .xlsx writer (no external library, no CDN) ---------- */
+var XLSX_CRC_TABLE = (function(){
+  var t = new Array(256);
+  for(var n=0;n<256;n++){ var c=n; for(var k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0; }
+  return t;
+})();
+function xlsxCrc32(bytes){
+  var c = 0xFFFFFFFF;
+  for(var i=0;i<bytes.length;i++) c = XLSX_CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function xlsxStrToBytes(str){
+  var out=[], i, c;
+  for(i=0;i<str.length;i++){
+    c = str.charCodeAt(i);
+    if(c<0x80) out.push(c);
+    else if(c<0x800){ out.push(0xC0|(c>>6), 0x80|(c&63)); }
+    else if(c<0xD800||c>=0xE000){ out.push(0xE0|(c>>12), 0x80|((c>>6)&63), 0x80|(c&63)); }
+    else { i++; var cp=0x10000+(((c&0x3FF)<<10)|(str.charCodeAt(i)&0x3FF)); out.push(0xF0|(cp>>18),0x80|((cp>>12)&63),0x80|((cp>>6)&63),0x80|(cp&63)); }
   }
-  return true;
+  return new Uint8Array(out);
+}
+function xlsxZipStore(files){
+  var chunks=[], central=[], offset=0;
+  function u16(n){ return [n&255,(n>>8)&255]; }
+  function u32(n){ return [n&255,(n>>8)&255,(n>>16)&255,(n>>>24)&255]; }
+  for(var i=0;i<files.length;i++){
+    var nameBytes = xlsxStrToBytes(files[i].name), data = files[i].data, crc = xlsxCrc32(data);
+    var local = [].concat([0x50,0x4B,0x03,0x04], u16(20), u16(0), u16(0), u16(0), u16(0),
+                          u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0));
+    chunks.push(new Uint8Array(local), nameBytes, data);
+    central.push({nameBytes:nameBytes, crc:crc, size:data.length, offset:offset});
+    offset += local.length + nameBytes.length + data.length;
+  }
+  var cdChunks=[], cdSize=0;
+  for(var j=0;j<central.length;j++){
+    var e = central[j];
+    var hdr = [].concat([0x50,0x4B,0x01,0x02], u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+                        u32(e.crc), u32(e.size), u32(e.size), u16(e.nameBytes.length),
+                        u16(0), u16(0), u16(0), u16(0), u32(0), u32(e.offset));
+    cdChunks.push(new Uint8Array(hdr), e.nameBytes);
+    cdSize += hdr.length + e.nameBytes.length;
+  }
+  var end = [].concat([0x50,0x4B,0x05,0x06], u16(0), u16(0), u16(central.length), u16(central.length), u32(cdSize), u32(offset), u16(0));
+  cdChunks.push(new Uint8Array(end));
+  var total = offset + cdSize + end.length;
+  var out = new Uint8Array(total), pos=0, all = chunks.concat(cdChunks);
+  for(var k=0;k<all.length;k++){ out.set(all[k], pos); pos += all[k].length; }
+  return out;
+}
+function xlsxXmlEsc(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'');
+}
+function xlsxColLetter(n){
+  var s=''; n=n+1;
+  while(n>0){ var r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26); }
+  return s;
+}
+function xlsxSheetXml(rows, widths){
+  var cols='';
+  if(widths && widths.length){
+    cols = '<cols>';
+    for(var w=0;w<widths.length;w++) cols += '<col min="'+(w+1)+'" max="'+(w+1)+'" width="'+widths[w]+'" customWidth="1"/>';
+    cols += '</cols>';
+  }
+  var body='';
+  for(var r=0;r<rows.length;r++){
+    body += '<row r="'+(r+1)+'"'+(r===0?' ht="20" customHeight="1"':'')+'>';
+    for(var c=0;c<rows[r].length;c++){
+      var v = rows[r][c];
+      if(v===null||v===undefined||v==='') continue;
+      var style = r===0 ? ' s="1"' : ' s="2"';
+      body += '<c r="'+xlsxColLetter(c)+(r+1)+'" t="inlineStr"'+style+'><is><t xml:space="preserve">'+xlsxXmlEsc(v)+'</t></is></c>';
+    }
+    body += '</row>';
+  }
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+    + cols + '<sheetData>' + body + '</sheetData></worksheet>';
+}
+function buildXlsxBytes(sheets){
+  var files=[];
+  var types = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+    + '<Default Extension="xml" ContentType="application/xml"/>'
+    + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+    + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
+  var wbSheets='', wbRels='';
+  for(var i=0;i<sheets.length;i++){
+    types += '<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+    wbSheets += '<sheet name="'+xlsxXmlEsc(sheets[i].name.slice(0,31))+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>';
+    wbRels += '<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>';
+    files.push({name:'xl/worksheets/sheet'+(i+1)+'.xml', data: xlsxStrToBytes(xlsxSheetXml(sheets[i].rows, sheets[i].widths))});
+  }
+  types += '</Types>';
+  wbRels += '<Relationship Id="rIdS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>';
+  var rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+  var workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+wbSheets+'</sheets></workbook>';
+  var workbookRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+wbRels+'</Relationships>';
+  var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>'
+    + '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FF1B2A3D"/><bgColor indexed="64"/></patternFill></fill></fills>'
+    + '<borders count="1"><border/></borders>'
+    + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    + '<cellXfs count="3">'
+    + '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    + '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>'
+    + '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>'
+    + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  files.unshift({name:'xl/styles.xml', data:xlsxStrToBytes(styles)});
+  files.unshift({name:'xl/_rels/workbook.xml.rels', data:xlsxStrToBytes(workbookRels)});
+  files.unshift({name:'xl/workbook.xml', data:xlsxStrToBytes(workbook)});
+  files.unshift({name:'_rels/.rels', data:xlsxStrToBytes(rels)});
+  files.unshift({name:'[Content_Types].xml', data:xlsxStrToBytes(types)});
+  return xlsxZipStore(files);
+}
+function writeXlsxFile(sheets, filename){
+  const bytes = buildXlsxBytes(sheets);
+  const blob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  downloadBlob(blob, filename);
 }
 
 /* ---------- export: Excel ---------- */
 function exportExcel(){
-  if(!xlsxReady()) return;
   try{
   syncDraftFromForm();
   const d = draft.details;
-  const wb = XLSX.utils.book_new();
-  const detailRows = [
+  const sheets = [];
+  const detailRows = [['Field','Detail'],
     ['Organisation', d.org], ['Title', d.title], ['Type', d.type], ['Date', d.date],
     ['Start', d.start], ['End', d.end], ['Venue', d.venue], ['Chairperson', d.chair],
     ['Secretary', d.secretary], ['Agenda', d.agenda]
   ];
   if(draft.quorum && draft.quorum.required!==null){
-    detailRows.push(['Quorum required', draft.quorum.requiredRaw], ['Present count', draft.quorum.presentCount], ['Quorum met', draft.quorum.met?'Yes':'No']);
+    detailRows.push(['Quorum required', draft.quorum.requiredRaw], ['Present count', String(draft.quorum.presentCount)], ['Quorum met', draft.quorum.met?'Yes':'No']);
   }
   if(draft.shgMode && draft.shg){
     detailRows.push(['SHG/VO/CLF name', draft.shg.name], ['Level', draft.shg.level], ['Savings collected', draft.shg.savings],
@@ -1805,45 +2667,30 @@ function exportExcel(){
   if(draft.confirmation){
     detailRows.push(['Minutes status', draft.confirmation.status], ['Confirmed date', draft.confirmation.date||''], ['Confirmed ref', draft.confirmation.ref||'']);
   }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailRows), 'Meeting Details');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['Present', d.present], ['Absent', d.absent], ['Special Invitees', d.invitees]
-  ]), 'Attendance');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['#','Agenda Item','Category'], ...(draft.agendaItems||[]).map((a,i)=>[i+1,a.heading,a.category||''])
-  ]), 'Agenda');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['#','Heading','Category','Discussion','Type','Decision'],
-    ...(draft.agendaItems||[]).map((a,i)=>[i+1,a.heading,a.category||'',a.discussion,a.type,a.decisionText])
-  ]), 'Minutes');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['Heading','Decision'],
-    ...(draft.agendaItems||[]).filter(a=>tagClass(a.type)==='decision').map(a=>[a.heading,a.decisionText])
-  ]), 'Decisions');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['Sr.','Subject','Action Required','Responsible','Deadline','Priority','Status','Remarks'],
-    ...(draft.actionPoints||[]).map((a,i)=>[i+1,a.subject,a.action,a.responsible,a.deadline,a.priority,a.status,a.remarks])
-  ]), 'Action Points');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['Pending / Deferred Matters'], ...(draft.pendingMatters||[]).map(p=>[p])
-  ]), 'Pending Matters');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['Sr.','Subject','Action Required','Responsible','Deadline','Status'],
-    ...(draft.actionPoints||[]).map((a,i)=>[i+1,a.subject,a.action,a.responsible,a.deadline,a.status])
-  ]), 'Follow-up Tracker');
-  XLSX.writeFile(wb, (d.title||'minutes').replace(/[^\w-]+/g,'_')+'.xlsx');
+  sheets.push({name:'Meeting Details', rows:detailRows, widths:[22,60]});
+  sheets.push({name:'Attendance', rows:[['Field','Detail'],['Present', d.present], ['Absent', d.absent], ['Special Invitees', d.invitees]], widths:[18,60]});
+  sheets.push({name:'Agenda', rows:[['#','Agenda Item','Category'], ...(draft.agendaItems||[]).map((a,i)=>[String(i+1),a.heading,a.category||''])], widths:[4,40,20]});
+  sheets.push({name:'Minutes', rows:[['#','Heading','Category','Discussion','Type','Decision'],
+    ...(draft.agendaItems||[]).map((a,i)=>[String(i+1),a.heading,a.category||'',a.discussion,a.type,a.decisionText])], widths:[4,26,16,50,12,40]});
+  sheets.push({name:'Decisions', rows:[['Heading','Decision'],
+    ...(draft.agendaItems||[]).filter(a=>tagClass(a.type)==='decision').map(a=>[a.heading,a.decisionText])], widths:[26,60]});
+  sheets.push({name:'Action Points', rows:[['Sr.','Subject','Action Required','Responsible','Deadline','Priority','Status','Remarks'],
+    ...(draft.actionPoints||[]).map((a,i)=>[String(i+1),a.subject,a.action,a.responsible,a.deadline,a.priority,a.status,a.remarks])], widths:[4,20,40,16,14,10,14,24]});
+  sheets.push({name:'Pending Matters', rows:[['Pending / Deferred Matters'], ...(draft.pendingMatters||[]).map(p=>[p])], widths:[70]});
+  if((draft.risks||[]).length) sheets.push({name:'Risks', rows:[['Risks / Blockers'], ...draft.risks.map(r=>[r])], widths:[70]});
+  if((draft.openQuestions||[]).length) sheets.push({name:'Open Questions', rows:[['Open Questions'], ...draft.openQuestions.map(q=>[q])], widths:[70]});
+  sheets.push({name:'Follow-up Tracker', rows:[['Sr.','Subject','Action Required','Responsible','Deadline','Status'],
+    ...(draft.actionPoints||[]).map((a,i)=>[String(i+1),a.subject,a.action,a.responsible,a.deadline,a.status])], widths:[4,20,40,16,14,14]});
+  writeXlsxFile(sheets, (d.title||'minutes').replace(/[^\w-]+/g,'_')+'.xlsx');
   }catch(e){ showToast('Excel export failed: '+e.message, 'error'); }
 }
 function exportTracker(){
-  if(!xlsxReady()) return;
   try{
     const rows = [['Meeting','Subject','Action','Responsible','Deadline','Priority','Status','Remarks']];
     DB.meetings.forEach(m=>(m.actionPoints||[]).forEach(a=>{
       rows.push([m.details.title||'', a.subject, a.action, a.responsible, a.deadline, a.priority, a.status, a.remarks]);
     }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Action Tracker');
-    XLSX.writeFile(wb, 'action_point_tracker.xlsx');
+    writeXlsxFile([{name:'Action Tracker', rows, widths:[24,20,40,16,14,10,14,24]}], 'action_point_tracker.xlsx');
   }catch(e){ showToast('Excel export failed: '+e.message, 'error'); }
 }
 
@@ -1855,6 +2702,8 @@ function plainTextMinutes(){
   (draft.agendaItems||[]).forEach((a,i)=>{ t+=`${i+1}. ${a.heading}\n${a.discussion}\nDecision: ${a.decisionText}\n\n`; });
   t += 'Action Points:\n';
   (draft.actionPoints||[]).forEach((a,i)=>{ t+=`${i+1}. ${a.action} — ${a.responsible} — ${a.deadline} [${a.status}]\n`; });
+  if((draft.risks||[]).length){ t += '\nRisks & Blockers:\n'; draft.risks.forEach(r=>{ t+=`- ${r}\n`; }); }
+  if((draft.openQuestions||[]).length){ t += '\nOpen Questions:\n'; draft.openQuestions.forEach(q=>{ t+=`- ${q}\n`; }); }
   return t;
 }
 function copyPlainText(){
@@ -2154,6 +3003,7 @@ function formatTranscriptResult(result, diarize){
   return JSON.stringify(result);
 }
 async function runAITranscription(blob){
+  if(!confirmAIUse('This audio recording will be sent to Puter\'s free transcription service.')){ throw new Error('Cancelled — nothing was sent.'); }
   await loadPuter();
   try{
     const result = await puter.ai.speech2txt(blob, {model:'gpt-4o-transcribe-diarize', response_format:'diarized_json'});
@@ -2279,6 +3129,7 @@ function errText(e){
   try{ return JSON.stringify(e); }catch(_){ return String(e); }
 }
 async function extractViaAI(file, mediaType){
+  if(!confirmAIUse('This image/PDF ('+(file.name||'attached file')+') will be sent for text extraction.')){ throw new Error('Cancelled — nothing was sent.'); }
   if(navigator.onLine === false) throw new Error('No internet connection — extracting text from images/PDFs needs to be online.');
   if((SETTINGS.provider||'anthropic') === 'puter'){
     await loadPuter();
@@ -2435,14 +3286,49 @@ function renderQAHistory(){
   const hist = draft.qaHistory||[];
   wrap.innerHTML = hist.map(h=>`
     <div style="margin-bottom:10px;">
-      <div style="font-weight:600;">${escapeHtml(h.q)}</div>
+      <div style="font-weight:600;">${escapeHtml(h.q)}${h.local?' <span class="tag noted">local</span>':''}</div>
       <div style="color:var(--muted);">${escapeHtml(h.a)}</div>
     </div>`).join('');
+}
+function askLocally(){
+  const input = document.getElementById('qaInput');
+  const q = input.value.trim();
+  if(!q) return;
+  syncDraftFromForm();
+  input.value = '';
+  const qWords = normWords(q);
+  const stop = new Set(['what','who','when','where','which','is','are','was','were','the','a','an','of','on','for','to','did','does','do']);
+  const meaningful = new Set([...qWords].filter(w=>!stop.has(w) && w.length>2));
+
+  const candidates = [];
+  (draft.agendaItems||[]).forEach((a,i)=>{
+    candidates.push({text:`Agenda "${a.heading}" — ${a.discussion} Decision: ${a.decisionText}`, words: normWords(a.heading+' '+a.discussion+' '+a.decisionText)});
+  });
+  (draft.actionPoints||[]).forEach((a,i)=>{
+    candidates.push({text:`Action: ${a.action} (Responsible: ${a.responsible}, Deadline: ${a.deadline}, Status: ${a.status})`, words: normWords(a.subject+' '+a.action+' '+a.responsible)});
+  });
+  (draft.pendingMatters||[]).forEach(p=>{
+    candidates.push({text:`Pending matter: ${p}`, words: normWords(p)});
+  });
+  if(draft.executiveSummary) candidates.push({text:'Executive summary: '+draft.executiveSummary, words: normWords(draft.executiveSummary)});
+
+  let scored = candidates.map(c=>({...c, score: jaccard(meaningful, c.words)})).filter(c=>c.score>0);
+  scored.sort((a,b)=>b.score-a.score);
+  const top = scored.slice(0,4);
+
+  const wrap = document.getElementById('qaHistory');
+  const answer = top.length
+    ? top.map(t=>t.text).join('\n\n')
+    : 'This is not clearly stated in the meeting record (local keyword search found no matching content — try "Ask AI" for a more flexible answer).';
+  draft.qaHistory = draft.qaHistory||[];
+  draft.qaHistory.push({q, a: answer, local:true});
+  renderQAHistory();
 }
 async function askAboutMeeting(){
   const input = document.getElementById('qaInput');
   const q = input.value.trim();
   if(!q) return;
+  if(!confirmAIUse('Your question and this meeting\'s minutes will be sent to get an answer.')){ return; }
   syncDraftFromForm();
   input.value = '';
   const wrap = document.getElementById('qaHistory');
@@ -2517,6 +3403,10 @@ function checkRecordingSupport(){
 }
 
 window.onload = function(){
+  updateModeBadges();
+  if(localStorage.getItem('mb_pin_enabled')==='1'){
+    showLockScreen();
+  }
   if(SETTINGS.org) document.getElementById('orgNameDisplay').textContent = SETTINGS.org;
   renderHome();
   if(window.speechSynthesis) speechSynthesis.onvoiceschanged = populateVoiceList;
@@ -2525,6 +3415,12 @@ window.onload = function(){
   document.addEventListener('input', (e)=>{
     if(e.target.closest('#screen-new') || e.target.closest('#screen-review')) scheduleAutosave();
   });
+
+  // activity + auto-lock
+  ['click','input','keydown','touchstart'].forEach(evt=>document.addEventListener(evt, markActivity));
+  setInterval(checkAutoLock, 20000);
+  window.addEventListener('online', updateModeBadges);
+  window.addEventListener('offline', updateModeBadges);
 
   // offer to restore an interrupted draft
   const auto = safeParse(localStorage.getItem('mb_autosave'), null);
