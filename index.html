@@ -1027,26 +1027,55 @@ function renderMaterialList(){
   wrap.innerHTML = attachedMaterials.map(item=>`
     <div style="border:1px solid var(--border);padding:10px;margin-bottom:8px;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-        <strong>${escapeHtml(item.name)}</strong>
+        <strong>${escapeHtml(item.name)}</strong>${item.insertedBlock ? ' <span class="tag decision">in notes</span>' : ''}
         <div class="rowtools">
-          ${item.status==='done' ? `<button class="btn small secondary" onclick="insertMaterialText('${item.id}')">Insert into notes</button>` : ''}
-          <button class="btn small outline" onclick="removeMaterial('${item.id}')">Remove</button>
+          ${item.status==='done' && !item.insertedBlock ? `<button class="btn small secondary" onclick="insertMaterialText('${item.id}')">Insert into notes</button>` : ''}
+          ${item.insertedBlock ? `<button class="btn small outline" onclick="removeMaterialFromNotes('${item.id}')">Remove from notes</button>` : ''}
+          <button class="btn small outline" onclick="removeMaterial('${item.id}')">${item.insertedBlock ? 'Discard' : 'Remove'}</button>
         </div>
       </div>
       ${item.status==='extracting' ? '<div class="caption"><span class="spinner"></span>Extracting text…</div>' : ''}
       ${item.status==='error' ? `<div class="msg error">${escapeHtml(item.error)}</div>` : ''}
-      ${item.status==='done' ? `<div class="msg ok" style="margin-bottom:6px;">✓ Text ready — edit below if needed, then tap "Insert into notes".</div><textarea rows="3" oninput="updateMaterialText('${item.id}', this.value)">${escapeHtml(item.text)}</textarea>` : ''}
-    </div>`).join('');
+      ${item.status==='done' ? `<div class="msg ok" style="margin-bottom:6px;">${item.insertedBlock ? '✓ Currently in your notes below — edit there, or tap "Remove from notes" to take it back out.' : '✓ Text ready — edit below if needed, then tap "Insert into notes".'}</div>${item.insertedBlock ? '' : `<textarea rows="3" oninput="updateMaterialText('${item.id}', this.value)">${escapeHtml(item.text)}</textarea>`}` : ''}
+    </div>`).join('') + (attachedMaterials.length ? '<div class="caption">Choosing a file always extracts text first so you can fix OCR mistakes before it touches your notes — it never inserts automatically.</div>' : '');
 }
 function updateMaterialText(id, value){ const m = attachedMaterials.find(x=>x.id===id); if(m) m.text = value; }
-function removeMaterial(id){ attachedMaterials = attachedMaterials.filter(x=>x.id!==id); renderMaterialList(); }
+function removeMaterial(id){
+  const m = attachedMaterials.find(x=>x.id===id);
+  if(m && m.insertedBlock) removeInsertedBlockFromNotes(m);
+  attachedMaterials = attachedMaterials.filter(x=>x.id!==id);
+  renderMaterialList();
+}
 function insertMaterialText(id){
   const m = attachedMaterials.find(x=>x.id===id);
   if(!m) return;
   const ta = document.getElementById('mInput');
-  ta.value = (ta.value ? ta.value+'\n\n' : '') + `--- From: ${m.name} ---\n` + m.text;
+  const block = `--- From: ${m.name} ---\n` + m.text;
+  ta.value = (ta.value ? ta.value+'\n\n' : '') + block;
+  m.insertedBlock = block; // remember exactly what we inserted, so it can be removed precisely later
+  renderMaterialList();
   scheduleAutosave();
   showToast('Inserted into notes.', 'ok');
+}
+function removeInsertedBlockFromNotes(m){
+  const ta = document.getElementById('mInput');
+  if(!ta || !m.insertedBlock) return;
+  const idx = ta.value.indexOf(m.insertedBlock);
+  if(idx === -1){ showToast('Could not find that inserted text — it may have been edited since. Remove it manually if needed.', 'error'); return; }
+  let before = ta.value.slice(0, idx);
+  let after = ta.value.slice(idx + m.insertedBlock.length);
+  before = before.replace(/\n\n$/, '');
+  after = after.replace(/^\n\n/, '');
+  ta.value = before + (before && after ? '\n\n' : '') + after;
+  scheduleAutosave();
+}
+function removeMaterialFromNotes(id){
+  const m = attachedMaterials.find(x=>x.id===id);
+  if(!m) return;
+  removeInsertedBlockFromNotes(m);
+  m.insertedBlock = null;
+  renderMaterialList();
+  showToast('Removed from notes — the file is still attached if you want to re-insert it.', 'ok');
 }
 async function persistMaterialsToMeeting(meetingId){
   for(const item of attachedMaterials){
