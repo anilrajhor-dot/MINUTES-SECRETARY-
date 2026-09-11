@@ -271,6 +271,27 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     <div class="field"><textarea id="mInput" rows="10" placeholder="Paste transcript or type quick notes here, e.g. 'Recovery ka performance satisfactory nahi hai. GM said all branches should review overdue accounts every Monday...'"></textarea></div>
 
     <div class="rowtools">
+      <button class="btn small secondary" onclick="openConvertPanel()">🌐 Convert Content to English</button>
+    </div>
+    <div id="convertPanel" class="hidden" style="border:1px solid var(--border);padding:12px;margin-top:10px;">
+      <div class="caption">Two separate methods — pick one. The original is always kept; nothing is overwritten until you choose to use it.</div>
+      <div class="rowtools" style="margin-top:6px;">
+        <button class="btn small secondary" onclick="runLocalConversion()">Convert locally (no AI, approximate)</button>
+        <button class="btn small secondary" onclick="runAIConversion()">Convert with AI (sends this content)</button>
+      </div>
+      <div id="convertStatus" style="margin-top:8px;"></div>
+      <div id="convertViewTabs" class="hidden rowtools" style="margin-top:8px;">
+        <button class="btn small outline" onclick="setConvertView('original')">Original</button>
+        <button class="btn small outline" onclick="setConvertView('english')">English</button>
+        <button class="btn small outline" onclick="setConvertView('side')">Side-by-side</button>
+      </div>
+      <div id="convertViewArea" style="margin-top:8px;"></div>
+      <div id="convertActions" class="hidden actions-toolbar">
+        <button class="btn small" onclick="useEnglishForMinutes()">Use English version for minutes</button>
+      </div>
+    </div>
+
+    <div class="rowtools">
       <button class="btn small secondary" onclick="detectSpeakers()">Detect speaker labels (Speaker 1, Speaker 2…)</button>
     </div>
     <div id="speakerMapWrap" class="hidden" style="margin-top:10px;border:1px solid var(--border);padding:12px;">
@@ -420,6 +441,13 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
       <textarea id="rQuestions" rows="3" placeholder="One open question per line"></textarea>
     </div>
 
+    <div class="section no-print hidden" id="originalTranscriptSection">
+      <h2>Original transcript (pre-conversion)</h2>
+      <div class="caption">This meeting's notes were converted to English before generating minutes. The original is kept here permanently.</div>
+      <button class="btn small outline" onclick="document.getElementById('originalTranscriptBox').classList.toggle('hidden')">🔍 View original</button>
+      <div id="originalTranscriptBox" class="hidden flag-item" style="margin-top:8px;white-space:pre-wrap;"></div>
+    </div>
+
     <div class="section no-print">
       <h2>Attached material</h2>
       <div class="caption">Photos, scans, and papers attached to this meeting.</div>
@@ -473,6 +501,7 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
       <div id="verificationStatusBadge"></div>
       <div id="verificationChecklist" style="margin:10px 0;"></div>
       <div class="rowtools">
+        <button class="btn secondary" id="confirmMinutesBtn" onclick="confirmMinutes()" disabled>Mark Confirmed</button>
         <button class="btn" id="finaliseBtn" onclick="finaliseMinutes()" disabled>Finalise minutes</button>
         <button class="btn outline hidden" id="newRevisionBtn" onclick="createNewRevision()">Create new revision</button>
       </div>
@@ -661,6 +690,11 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
     <div class="stat-row" id="privacyStats"></div>
     <div id="privacyDetails" style="margin-top:10px;"></div>
   </div>
+  <div class="section" id="lockNowSection">
+    <h2>Lock now</h2>
+    <div class="caption">Immediately lock the app, independent of the auto-lock timer. Requires PIN protection to be enabled in Settings.</div>
+    <button class="btn secondary" onclick="lockNow()">🔒 Lock now</button>
+  </div>
   <div class="section">
     <h2>Confidential offline test</h2>
     <div class="caption">Exercises create/save/local-process/search/edit/export/tracker — every step runs without any network or AI call. If any step needs AI, it will fail here rather than silently phoning out.</div>
@@ -677,8 +711,15 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
 <!-- ============ SETTINGS ============ -->
 <section id="screen-settings" class="hidden">
   <div class="section">
-    <h2>AI configuration</h2>
-    <div class="field"><label>AI provider</label>
+    <h2>Processing mode</h2>
+    <div class="msg ok" style="font-weight:600;">🔒 Local / Offline — Default</div>
+    <p class="caption">Typing notes, editing, saving, exporting, printing, TTS, and "Auto-structure without AI" always run on this device only — nothing below changes that. Nothing is ever selected or sent automatically.</p>
+  </div>
+
+  <div class="section">
+    <h2>Optional external AI</h2>
+    <p class="caption">Only used when you explicitly tap an AI action (Generate with AI, AI Check, Ask AI, Convert with AI, or photo/PDF text extraction) — confirmed once per session before anything is sent.</p>
+    <div class="field"><label>Provider</label>
       <select id="setProvider" onchange="toggleProviderFields()">
         <option value="anthropic">Your own Anthropic API key</option>
         <option value="puter">Free — no key needed (Puter.js)</option>
@@ -706,6 +747,14 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
       <div class="field hidden" id="puterCustomWrap"><label>Custom Puter model ID</label><input type="text" id="setPuterModelCustom" placeholder="e.g. google/gemini-2.5-pro"></div>
     </div>
 
+    <table style="margin-top:10px;">
+      <tr><th>Provider</th><th>Model</th><th>External transmission</th></tr>
+      <tr><td id="providerSummaryName">—</td><td id="providerSummaryModel">—</td><td style="color:var(--danger);font-weight:600;">YES</td></tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Other settings</h2>
     <div class="field"><label>Default organisation name</label><input type="text" id="setOrg"></div>
     <div class="field"><label>Default meeting template</label>
       <select id="setTemplate">
@@ -790,7 +839,7 @@ function showToast(msg, kind){
 }
 
 /* ---------- state & storage ---------- */
-const APP_VERSION = 'v2.0';
+const APP_VERSION = 'v2.1';
 let anyAIUsedThisSession = false;
 let ENC = {active:false, key:null, salt:null}; // filled in by the encryption module below
 let DB = { meetings: safeParse(localStorage.getItem('mb_meetings'), []) };
@@ -899,6 +948,10 @@ function checkAutoLock(){
   if(Date.now() - lastActivityAt > mins*60000) showLockScreen();
 }
 function showLockScreen(){ document.getElementById('lockScreen').classList.remove('hidden'); }
+function lockNow(){
+  if(!ENC.active){ showToast('Enable PIN protection in Settings first — there\'s nothing to lock otherwise.', 'error'); return; }
+  showLockScreen();
+}
 async function tryUnlock(){
   const pin = document.getElementById('lockPinInput').value;
   const salt = localStorage.getItem('mb_pin_salt');
@@ -991,6 +1044,8 @@ function startNew(mode){
   populatePrevMeetingSelect();
   attachedMaterials = [];
   renderMaterialList();
+  lastOriginalTranscript = '';
+  document.getElementById('convertPanel').classList.add('hidden');
 }
 
 /* ---------- attach material (photos/PDFs/text — free AI OCR via Puter) ---------- */
@@ -1155,6 +1210,144 @@ function detectNamedSpeakers(text){
   });
   return Object.keys(counts).filter(k=>counts[k]>=2);
 }
+/* ---------- Convert Content to English ---------- */
+/* Local method is genuinely limited: word/phrase substitution only, no real grammar.
+   It says so honestly rather than presenting garbled output as reliable. */
+const HI_EN_PATTERNS = [
+  [/\b([\w']{2,30}(?:\s+[\w']{2,30}){0,4}?)\s+nahi\s+hai\b/gi, '$1 is not'],
+  [/\b([\w']{2,30}(?:\s+[\w']{2,30}){0,4}?)\s+nahi\s+tha\b/gi, '$1 was not'],
+  [/\b([\w']{2,30}(?:\s+[\w']{2,30}){0,4}?)\s+nahi\s+the\b/gi, '$1 were not'],
+  [/\bho\s+gaya\s+hai\b/gi, 'has been done'],
+  [/\bho\s+gayi\s+hai\b/gi, 'has been done'],
+  [/\bho\s+gaya\b/gi, 'is done'],
+  [/\b([\w']{2,30}(?:\s+[\w']{2,30}){0,4}?)\s+karna\s+hai\b/gi, '$1 needs to be done'],
+  [/\b([\w']{2,30}(?:\s+[\w']{2,30}){0,4}?)\s+karni\s+hai\b/gi, '$1 needs to be done'],
+  [/\bagle\s+hafte\b/gi, 'next week'],
+  [/\bagle\s+mahine\b/gi, 'next month'],
+  [/\bis\s+hafte\b/gi, 'this week'],
+  [/\bpichle\s+hafte\b/gi, 'last week'],
+  [/\b(\d+)\s+din\s+mein\b/gi, 'in $1 days'],
+  [/\b(\d+)\s+hafte\s+mein\b/gi, 'in $1 weeks']
+];
+const HI_EN_WORDS = {
+  hai:'is', hain:'are', tha:'was', the:'were', thi:'was',
+  ka:'of', ki:'of', ke:'of', ko:'to', se:'from', mein:'in', par:'on',
+  aur:'and', lekin:'but', kyunki:'because', agar:'if', nahi:'not', bhi:'also',
+  haan:'yes', abhi:'currently', phir:'then', fir:'then', sabhi:'all', kuch:'some',
+  zyada:'more', kam:'less', bahut:'very', ye:'this', yeh:'this',
+  wo:'that', woh:'that', hamara:'our', apna:'own',
+  karna:'to do', karenge:'will do', karega:'will do', karegi:'will do', kiya:'did',
+  diya:'given', liya:'taken', dekhna:'to review', dekha:'reviewed',
+  chahiye:'should', hoga:'will be', milega:'will get', dena:'to give', lena:'to take',
+  baat:'matter', masla:'issue', samasya:'problem', dikkat:'issue', pareshani:'trouble',
+  jaldi:'soon', turant:'immediately', saath:'along with', waqt:'time', samay:'time',
+  tareekh:'date', din:'day', hafte:'week', mahine:'month', saal:'year'
+};
+const COMMON_ENGLISH_WORDS = new Set(['the','a','an','is','are','was','were','be','been','being','and','or','but','if','because',
+  'of','to','in','on','at','for','from','with','by','as','not','no','yes','this','that','these','those','it','its',
+  'he','she','they','we','you','i','his','her','their','our','your','my','will','shall','should','would','could','can',
+  'may','might','must','have','has','had','do','does','did','done','going','go','went','gone','get','got','give','gave',
+  'take','took','make','made','review','submit','approve','approved','decision','decided','discuss','discussed','discussion',
+  'meeting','minutes','agenda','report','budget','branch','manager','committee','board','director','chairman','secretary',
+  'member','members','present','absent','action','point','points','recovery','account','accounts','bank','staff','office',
+  'week','weeks','month','months','year','years','day','days','today','tomorrow','yesterday','next','last','this','before',
+  'after','during','update','status','pending','complete','completed','issue','issues','matter','matters','plan','planned',
+  'target','deadline','date','time','also','more','less','all','some','any','each','every','other','same','new','old',
+  'good','bad','satisfactory','unsatisfactory','high','low','total','number','percent','rupees','said','told','asked',
+  'gm','ceo','md','hr','it','crm','npa','kyc','vo','clf','shg','loan','loans','savings','deposit','interest','rate',
+  'customer','customers','service','staff','training','compliance','audit','policy','process','system','data',
+  'form','office','branch','head','chief','department']);
+function localConvertToEnglish(text){
+  let result = text;
+  HI_EN_PATTERNS.forEach(([re, rep])=>{ result = result.replace(re, rep); });
+  const tokens = result.split(/(\s+)/);
+  let matched = 0, total = 0;
+  const out = tokens.map(w=>{
+    if(/^\s*$/.test(w)) return w;
+    const clean = w.replace(/[.,!?;:()'"]/g,'').toLowerCase();
+    const raw = w.replace(/[.,!?;:()'"]/g,'');
+    if(!clean) return w;
+    if(/^\d+$/.test(clean)) return w; // numbers are always fine either way, don't count against confidence
+    total++;
+    if(HI_EN_WORDS[clean]){
+      matched++;
+      const trail = w.match(/[.,!?;:)]+$/);
+      return HI_EN_WORDS[clean] + (trail?trail[0]:'');
+    }
+    // conservative: only count as "already English" if it's actually a recognized common English
+    // word — a Latin-alphabet check alone can't tell "hum"/"jo"/"kal" apart from real English
+    if(COMMON_ENGLISH_WORDS.has(clean) || /^[A-Z][a-z]+$/.test(raw)) matched++; // also allow capitalized words as likely proper nouns
+    return w;
+  });
+  return {text: out.join(''), confidence: total ? matched/total : 1};
+}
+let convertState = {original:'', english:'', method:'', view:'original'};
+function openConvertPanel(){
+  convertState.original = document.getElementById('mInput').value;
+  document.getElementById('convertPanel').classList.remove('hidden');
+  document.getElementById('convertStatus').innerHTML = '';
+  document.getElementById('convertViewTabs').classList.add('hidden');
+  document.getElementById('convertActions').classList.add('hidden');
+  document.getElementById('convertViewArea').innerHTML = '';
+}
+function runLocalConversion(){
+  convertState.original = document.getElementById('mInput').value;
+  if(!convertState.original.trim()){ showToast('Nothing to convert — type or paste notes first.', 'error'); return; }
+  const {text, confidence} = localConvertToEnglish(convertState.original);
+  if(confidence < 0.6){
+    document.getElementById('convertStatus').innerHTML = '<div class="msg error">Local conversion cannot reliably translate this content (too much of it isn\'t in the local word list). Optional external AI conversion is available above if you want a proper translation.</div>';
+    document.getElementById('convertViewTabs').classList.add('hidden');
+    document.getElementById('convertActions').classList.add('hidden');
+    document.getElementById('convertViewArea').innerHTML = '';
+    return;
+  }
+  convertState.english = text;
+  convertState.method = 'local';
+  document.getElementById('convertStatus').innerHTML = `<div class="msg ok">Converted locally (no AI, no data sent). This is word-level substitution, not real translation — it will read awkwardly in places (~${Math.round(confidence*100)}% word coverage). Review and edit before using.</div>`;
+  setConvertView('side');
+}
+async function runAIConversion(){
+  convertState.original = document.getElementById('mInput').value;
+  if(!convertState.original.trim()){ showToast('Nothing to convert — type or paste notes first.', 'error'); return; }
+  if(!confirmAIUse('This notes/transcript content will be sent to convert it into English.')){ showToast('Cancelled — nothing was sent.', 'ok'); return; }
+  document.getElementById('convertStatus').innerHTML = '<div class="msg"><span class="spinner"></span>Converting with AI…</div>';
+  try{
+    const sys = `Convert this mixed Hindi/Hinglish/English meeting transcript into natural, formal, professional English suitable for official minutes. Rules: never change facts; preserve names, designations, dates, times, amounts, percentages, figures, reference numbers, scheme names, bank/organisation names, and technical terms exactly; do not invent or omit information; preserve sentence and paragraph order; output ONLY the converted text with no commentary and no markdown fences.`;
+    const text = await callClaude(sys, convertState.original, 4000);
+    convertState.english = text.trim();
+    convertState.method = 'ai';
+    document.getElementById('convertStatus').innerHTML = '<div class="msg ok">Converted using '+escapeHtml(providerLabelText())+'. Review and edit before using — meaning should be preserved, but always verify names, figures, and dates.</div>';
+    setConvertView('side');
+  }catch(err){
+    document.getElementById('convertStatus').innerHTML = '<div class="msg error">'+escapeHtml(err.message)+'</div>';
+  }
+}
+function setConvertView(view){
+  convertState.view = view;
+  document.getElementById('convertViewTabs').classList.remove('hidden');
+  document.getElementById('convertActions').classList.remove('hidden');
+  const area = document.getElementById('convertViewArea');
+  if(view==='original'){
+    area.innerHTML = `<textarea rows="8" readonly>${escapeHtml(convertState.original)}</textarea>`;
+  }else if(view==='english'){
+    area.innerHTML = `<textarea rows="8" oninput="convertState.english=this.value">${escapeHtml(convertState.english)}</textarea>`;
+  }else{
+    area.innerHTML = `<div class="grid2">
+      <div><label>Original</label><textarea rows="10" readonly>${escapeHtml(convertState.original)}</textarea></div>
+      <div><label>English</label><textarea rows="10" oninput="convertState.english=this.value">${escapeHtml(convertState.english)}</textarea></div>
+    </div>`;
+  }
+}
+function useEnglishForMinutes(){
+  if(!convertState.english.trim()){ showToast('Nothing converted yet.', 'error'); return; }
+  lastOriginalTranscript = convertState.original;
+  document.getElementById('mInput').value = convertState.english;
+  document.getElementById('convertPanel').classList.add('hidden');
+  scheduleAutosave();
+  showToast('English version now in your notes. The original is kept — it will show as "View original transcript" on the Review screen after you generate minutes.', 'ok');
+}
+let lastOriginalTranscript = '';
+
 function detectSpeakers(){
   const text = document.getElementById('mInput').value;
   const numeric = new Set();
@@ -1244,11 +1437,28 @@ function toggleProviderFields(){
   const p = document.getElementById('setProvider').value;
   document.getElementById('providerAnthropic').classList.toggle('hidden', p!=='anthropic');
   document.getElementById('providerPuter').classList.toggle('hidden', p!=='puter');
+  updateProviderSummary();
+}
+function updateProviderSummary(){
+  const nameEl = document.getElementById('providerSummaryName');
+  const modelEl = document.getElementById('providerSummaryModel');
+  if(!nameEl) return;
+  const p = document.getElementById('setProvider').value;
+  if(p==='puter'){
+    nameEl.textContent = 'Puter.js (free)';
+    const sel = document.getElementById('setPuterModel').value;
+    modelEl.textContent = sel==='custom' ? (document.getElementById('setPuterModelCustom').value||'(custom, not set)') : sel;
+  }else{
+    nameEl.textContent = 'Anthropic (your API key)';
+    modelEl.textContent = document.getElementById('setModel').value || 'claude-sonnet-4-5';
+  }
 }
 document.addEventListener('change', (e)=>{
   if(e.target && e.target.id==='setPuterModel'){
     document.getElementById('puterCustomWrap').classList.toggle('hidden', e.target.value!=='custom');
+    updateProviderSummary();
   }
+  if(e.target && ['setModel','setPuterModelCustom'].includes(e.target.id)) updateProviderSummary();
 });
 function loadSettingsForm(){
   document.getElementById('setProvider').value = SETTINGS.provider || 'anthropic';
@@ -1449,6 +1659,7 @@ async function startManualMinutes(){
     executiveSummary: '',
     oneMinuteSummary: '',
     rawInput: document.getElementById('mInput').value.trim(),
+    originalTranscript: lastOriginalTranscript || '',
     qaHistory: []
   };
   if(attachedMaterials.length) await persistMaterialsToMeeting(draft.id);
@@ -1693,6 +1904,7 @@ async function startRuleBasedMinutes(){
     executiveSummary: parsed.executiveSummary,
     oneMinuteSummary: '',
     rawInput: input,
+    originalTranscript: lastOriginalTranscript || '',
     qaHistory: []
   };
   if(attachedMaterials.length) await persistMaterialsToMeeting(draft.id);
@@ -1799,6 +2011,7 @@ Return JSON with this exact shape:
       executiveSummary: parsed2.executiveSummary||'',
       oneMinuteSummary: parsed2.oneMinuteSummary||'',
       rawInput: input,
+      originalTranscript: lastOriginalTranscript || '',
       qaHistory: []
     };
     if(attachedMaterials.length) await persistMaterialsToMeeting(draft.id);
@@ -1830,7 +2043,7 @@ const VERIFICATION_ITEMS = [
 function newVerification(){
   const checklist = {};
   VERIFICATION_ITEMS.forEach(([key])=>{ checklist[key] = false; });
-  return {status:'Working Draft', checklist, finalizedAt:null, revisionOf:null, revisionNote:''};
+  return {status:'Working Draft', checklist, finalizedAt:null, revisionOf:null, revisionNote:'', revisionNumber:1};
 }
 function computeQuorum(presentText, totalStr, reqStr){
   if(!reqStr) return null;
@@ -1857,7 +2070,8 @@ function normalizeAgendaItems(items){
     responsibility: it && it.responsibility ? String(it.responsibility) : '',
     timeline: it && it.timeline ? String(it.timeline) : '',
     ambiguous: !!(it && it.ambiguous),
-    ambiguityNote: it && it.ambiguityNote ? String(it.ambiguityNote) : ''
+    ambiguityNote: it && it.ambiguityNote ? String(it.ambiguityNote) : '',
+    verification: (it && it.verification) || (it && it.confirmed ? 'confirmed' : 'needs-verification')
   }));
 }
 function normalizeActionPoints(points){
@@ -1871,7 +2085,8 @@ function normalizeActionPoints(points){
     deadline: a && a.deadline ? String(a.deadline) : 'Not specified',
     priority: (a && validPriority.includes(a.priority)) ? a.priority : 'Medium',
     status: (a && validStatus.includes(a.status)) ? a.status : 'Open',
-    remarks: a && a.remarks ? String(a.remarks) : ''
+    remarks: a && a.remarks ? String(a.remarks) : '',
+    verification: (a && a.verification) || 'needs-verification'
   }));
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -1887,6 +2102,9 @@ function renderReview(){
   document.getElementById('rPending').value = (draft.pendingMatters||[]).join('\n');
   document.getElementById('rRisks').value = (draft.risks||[]).join('\n');
   document.getElementById('rQuestions').value = (draft.openQuestions||[]).join('\n');
+  const otSection = document.getElementById('originalTranscriptSection');
+  otSection.classList.toggle('hidden', !draft.originalTranscript);
+  if(draft.originalTranscript) document.getElementById('originalTranscriptBox').textContent = draft.originalTranscript;
   renderAgendaList();
   renderActionTable();
   renderQuorumBadge();
@@ -1901,10 +2119,12 @@ function renderReview(){
 /* ---------- verification & finalisation ---------- */
 function renderVerificationUI(){
   if(!draft.verification) draft.verification = newVerification();
+  if(draft.verification.revisionNumber===undefined) draft.verification.revisionNumber = 1;
   const v = draft.verification;
   const badge = document.getElementById('verificationStatusBadge');
-  const statusCls = v.status==='Final' ? 'decision' : (v.status==='Reviewed' ? 'discussion' : 'noted');
+  const statusCls = v.status==='Final' ? 'decision' : (v.status==='Confirmed' ? 'decision' : (v.status==='Reviewed' ? 'discussion' : 'noted'));
   badge.innerHTML = `<span class="tag ${statusCls}">${escapeHtml(v.status)}</span>` +
+    (v.revisionNumber>1 ? ` <span class="tag noted">revision ${v.revisionNumber}</span>` : '') +
     (v.status==='Final' ? ` <span class="caption" style="display:inline;">— locked ${v.finalizedAt?('on '+new Date(v.finalizedAt).toLocaleString()):''}. Edit by creating a new revision.</span>` : '');
   const list = document.getElementById('verificationChecklist');
   list.innerHTML = VERIFICATION_ITEMS.map(([key,label])=>`
@@ -1913,7 +2133,10 @@ function renderVerificationUI(){
       ${escapeHtml(label)}
     </label>`).join('');
   const allChecked = VERIFICATION_ITEMS.every(([key])=>v.checklist[key]);
-  document.getElementById('finaliseBtn').disabled = v.status==='Final' || !allChecked;
+  const confirmBtn = document.getElementById('confirmMinutesBtn');
+  confirmBtn.classList.toggle('hidden', v.status==='Final' || v.status==='Confirmed');
+  confirmBtn.disabled = !allChecked;
+  document.getElementById('finaliseBtn').disabled = v.status!=='Confirmed';
   document.getElementById('finaliseBtn').classList.toggle('hidden', v.status==='Final');
   document.getElementById('newRevisionBtn').classList.toggle('hidden', v.status!=='Final');
 }
@@ -1922,13 +2145,24 @@ function toggleVerificationItem(key, checked){
   if(VERIFICATION_ITEMS.every(([k])=>draft.verification.checklist[k]) && draft.verification.status==='Working Draft'){
     draft.verification.status = 'Reviewed';
   }
+  if(!checked && (draft.verification.status==='Reviewed')){
+    draft.verification.status = 'Working Draft';
+  }
   unsavedChanges = true;
   renderVerificationUI();
 }
-function finaliseMinutes(){
+function confirmMinutes(){
   const allChecked = VERIFICATION_ITEMS.every(([key])=>draft.verification.checklist[key]);
   if(!allChecked){ showToast('Complete every item on the verification checklist first.', 'error'); return; }
-  if(!confirm('Finalise these minutes? The record will become read-only. You can still create a new revision later if something needs to change.')) return;
+  draft.verification.status = 'Confirmed';
+  unsavedChanges = true;
+  renderVerificationUI();
+  document.getElementById('verificationMsg').innerHTML = '<div class="msg ok">Marked Confirmed. You can now finalise, or keep editing before you do.</div>';
+}
+function finaliseMinutes(){
+  if(draft.verification.status !== 'Confirmed'){ showToast('Mark the minutes Confirmed first.', 'error'); return; }
+  const warned = confirm('These minutes contain confidential meeting information. Please verify attendance, quorum, decisions, resolutions, names, figures, responsibilities and deadlines before finalising.\n\nFinalise now? The record will become read-only — you can still create a new revision later if something needs to change.');
+  if(!warned) return;
   draft.verification.status = 'Final';
   draft.verification.finalizedAt = new Date().toISOString();
   syncDraftFromForm();
@@ -1945,14 +2179,16 @@ function createNewRevision(){
   const newDraft = JSON.parse(JSON.stringify(draft));
   newDraft.id = uid();
   newDraft.createdAt = new Date().toISOString();
+  const prevRevisionNumber = draft.verification.revisionNumber || 1;
   newDraft.verification = newVerification();
   newDraft.verification.revisionOf = draft.id;
-  newDraft.verification.revisionNote = 'Revision of meeting finalised on '+ (draft.verification.finalizedAt ? new Date(draft.verification.finalizedAt).toLocaleDateString() : '');
+  newDraft.verification.revisionNumber = prevRevisionNumber + 1;
+  newDraft.verification.revisionNote = 'Revision '+(prevRevisionNumber+1)+' — of meeting finalised on '+ (draft.verification.finalizedAt ? new Date(draft.verification.finalizedAt).toLocaleDateString() : '');
   draft = newDraft;
   unsavedChanges = true;
   doAutosave();
   renderReview();
-  showToast('New editable revision created — the original final version is untouched in the Library.', 'ok');
+  showToast('New editable revision (#'+newDraft.verification.revisionNumber+') created — the original final version is untouched in the Library.', 'ok');
 }
 function applyLockState(){
   const locked = draft.verification && draft.verification.status === 'Final';
@@ -2008,6 +2244,7 @@ function renderAgendaList(){
         <span class="tag ${tagClass(item.type)}">${escapeHtml(item.type||'Discussion')}</span>
         <button class="btn small outline" onclick="removeAgendaItem(${i})">Remove</button>
       </div>
+      <div style="margin-top:4px;">${verificationBadge(item.verification, i, 'agendaItems')}</div>
       ${!draft.boardMode ? `<div style="margin-top:6px;max-width:260px;"><label>Category</label><input type="text" value="${escapeHtml(item.category||'')}" placeholder="e.g. HR/Staffing" oninput="draft.agendaItems[${i}].category=this.value;renderAgendaList()"></div>` : ''}
       ${item.ambiguous ? `<div class="flag-item">Ambiguous whether approved or only discussed: ${escapeHtml(item.ambiguityNote||'')}</div>` : ''}
       <label style="margin-top:8px;">Discussion</label>
@@ -2061,6 +2298,14 @@ function toggleSource(elId, text){
   el.textContent = src ? ('Closest matching sentence in your original notes: "'+src+'"') : 'No confidently matching sentence found in the original notes (this can happen with heavily reworded AI output, or if the item was added/edited manually).';
   el.classList.remove('hidden');
 }
+function verificationBadge(status, i, arrName){
+  status = status || 'needs-verification';
+  const labels = {'needs-verification':['Needs verification','deferred'], 'source-found':['Source found','discussion'], 'confirmed':['✓ Confirmed by you','decision']};
+  const [label, cls] = labels[status] || labels['needs-verification'];
+  const nextStatus = status==='confirmed' ? 'needs-verification' : 'confirmed';
+  const btnLabel = status==='confirmed' ? 'Unconfirm' : 'Mark confirmed';
+  return `<span class="tag ${cls}">${label}</span> <button class="btn small outline" onclick="draft.${arrName}[${i}].verification='${nextStatus}';${arrName==='agendaItems'?'renderAgendaList()':'renderActionTable()'}" style="padding:2px 8px;font-size:.72rem;">${btnLabel}</button>`;
+}
 function tagClass(t){
   t=(t||'').toLowerCase();
   if(t.includes('decision')||t.includes('resolution')||t.includes('approval')) return 'decision';
@@ -2093,7 +2338,7 @@ function renderActionTable(){
       <td><button class="btn small outline" onclick="speakOne('${escapeHtml(a.action).replace(/'/g,"&#39;")}. Responsible: ${escapeHtml(a.responsible).replace(/'/g,"&#39;")}. Deadline: ${escapeHtml(a.deadline).replace(/'/g,"&#39;")}.')" title="Speak this action point">🔊</button> <button class="btn small outline" onclick="toggleSource('srcAction_${i}', ${JSON.stringify(a.action).replace(/"/g,'&quot;')})" title="View source">🔍</button> <button class="btn small outline" onclick="removeActionRow(${i})">✕</button></td>`;
     tbody.appendChild(tr);
     const srcTr = document.createElement('tr');
-    srcTr.innerHTML = `<td colspan="9"><div id="srcAction_${i}" class="hidden flag-item"></div></td>`;
+    srcTr.innerHTML = `<td colspan="9"><div style="padding:4px 0;">${verificationBadge(a.verification, i, 'actionPoints')}</div><div id="srcAction_${i}" class="hidden flag-item"></div></td>`;
     tbody.appendChild(srcTr);
   });
 }
@@ -2396,20 +2641,26 @@ async function renderPrivacyDashboard(){
   const recCount = recs.filter(r=>r.type==='live'||r.type==='uploaded').length;
   const matCount = recs.filter(r=>r.type==='material').length;
   document.getElementById('privacyStats').innerHTML = `
+    <div class="stat"><div class="num">${anyAIUsedThisSession?'EXTERNAL AI':'LOCAL'}</div><div class="lbl">Processing mode</div></div>
     <div class="stat"><div class="num">${online?'Online':'Offline'}</div><div class="lbl">Connection</div></div>
-    <div class="stat"><div class="num">${anyAIUsedThisSession?'Used':'Not used'}</div><div class="lbl">AI this session</div></div>
     <div class="stat"><div class="num">${pinOn?'ON':'OFF'}</div><div class="lbl">Encryption</div></div>
     <div class="stat"><div class="num">${DB.meetings.length}</div><div class="lbl">Meetings stored</div></div>`;
+  const lastTest = safeParse(localStorage.getItem('mb_last_offline_test'), null);
   document.getElementById('privacyDetails').innerHTML = `
+    ${lastTest && lastTest.pass ? `<div class="msg ok" style="font-weight:600;">🔒 CONFIDENTIAL OFFLINE MODE — PASS <span class="caption" style="display:inline;font-weight:400;">(last verified ${new Date(lastTest.at).toLocaleString()} — run the test below again any time)</span></div>` : `<div class="msg">Run the confidential offline test below to verify this device.</div>`}
     <table>
+      <tr><td>Current processing mode</td><td>${anyAIUsedThisSession?'EXTERNAL AI (used this session)':'LOCAL'}</td></tr>
+      <tr><td>Internet required for current mode</td><td>${anyAIUsedThisSession?'Yes':'No'}</td></tr>
+      <tr><td>AI used this session</td><td>${anyAIUsedThisSession?'Yes':'No'}</td></tr>
+      <tr><td>Data transmitted this session</td><td>${anyAIUsedThisSession?'Yes — to '+escapeHtml(providerLabelText()):'No'}</td></tr>
       <tr><td>AI provider configured</td><td>${escapeHtml(providerLabelText())}</td></tr>
       <tr><td>Confirm before AI use</td><td>${SETTINGS.confirmAI===false?'Off':'On (once per session)'}</td></tr>
-      <tr><td>External transmission allowed</td><td>${anyAIUsedThisSession?'Yes — AI was used this session':'No external transmission has occurred this session'}</td></tr>
       <tr><td>Local storage</td><td>${DB.meetings.length} meeting(s), ${recCount} recording(s), ${matCount} attached file(s)</td></tr>
-      <tr><td>Encryption status</td><td>${pinOn?'AES-GCM encryption active (PIN required to unlock)':'Not encrypted (PIN protection available in Settings)'}</td></tr>
+      <tr><td>Encryption</td><td>${pinOn?'ON — AES-GCM, PIN required to unlock':'OFF'}</td></tr>
       <tr><td>Auto-lock</td><td>${SETTINGS.autoLockMinutes ? SETTINGS.autoLockMinutes+' minutes idle' : 'Not set'}</td></tr>
       <tr><td>App version</td><td>Minute Book ${APP_VERSION}</td></tr>
-    </table>`;
+    </table>
+    <p class="caption" style="margin-top:8px;">"Delete all confidential data" below removes data on this device only — it has no effect on any copy you've separately exported, emailed, or shared elsewhere.</p>`;
 }
 async function deleteAllConfidentialData(){
   if(!confirm('Delete ALL meetings, recordings, attached material, and settings from this device? This cannot be undone.')) return;
@@ -2479,9 +2730,11 @@ async function runOfflineTest(){
   }catch(e){ fail('Create meeting object', e); }
 
   const allPass = steps.every(s=>s.ok);
+  safeSetItem('mb_last_offline_test', JSON.stringify({pass: allPass, at: new Date().toISOString(), steps: steps.map(s=>({name:s.name, ok:s.ok}))}));
   out.innerHTML = `<div class="msg ${allPass?'ok':'error'}" style="font-weight:600;">${allPass?'✓ CONFIDENTIAL OFFLINE MODE — PASS':'⚠ Some steps are not fully offline-capable:'}</div>` +
     steps.map(s=>`<div class="flag-item" style="border-left-color:${s.ok?'var(--ok)':'var(--danger)'};">${s.ok?'✓':'✗'} ${escapeHtml(s.name)}${s.err?': '+escapeHtml(s.err):''}</div>`).join('') +
     '<div class="caption" style="margin-top:8px;">None of these steps called an AI provider or sent data anywhere — they use the same local functions as the rest of the app.</div>';
+  renderPrivacyDashboard();
 }
 
 /* ---------- export: Word (HTML-compatible .doc) ---------- */
