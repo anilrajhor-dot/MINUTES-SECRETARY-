@@ -295,9 +295,12 @@ footer{text-align:center;color:var(--muted);font-size:.78rem;padding:30px 20px;}
       <button class="btn small secondary" onclick="detectSpeakers()">Detect speaker labels (Speaker 1, Speaker 2…)</button>
     </div>
     <div id="speakerMapWrap" class="hidden" style="margin-top:10px;border:1px solid var(--border);padding:12px;">
-      <div class="caption">Map each detected speaker to a role or name, then apply — this replaces the label throughout your notes. Nothing is guessed automatically.</div>
+      <div class="caption">Map each detected speaker to a role or name, then apply — this replaces the label throughout your notes. Nothing is guessed automatically; confirmed name→role mappings are remembered for next time.</div>
       <div id="speakerMapList"></div>
-      <button class="btn small secondary" onclick="applySpeakerMap()">Apply mapping to notes</button>
+      <div class="rowtools" style="margin-top:8px;">
+        <button class="btn small secondary" onclick="applySpeakerMap()">Apply mapping to notes</button>
+        <button class="btn small outline hidden" id="speakerSuggestBtn" onclick="suggestSpeakerRolesAI()">🔎 Suggest roles with AI (sends transcript)</button>
+      </div>
     </div>
 
     <label style="margin-top:14px;display:block;">Attach material (photos of notes/agenda papers, scanned pages, PDFs)</label>
@@ -1348,6 +1351,20 @@ function useEnglishForMinutes(){
 }
 let lastOriginalTranscript = '';
 
+/* ---------- speaker-role memory (named speakers only — numeric "Speaker N" labels
+   aren't a stable identity across recordings, so they're never remembered) ---------- */
+function loadSpeakerMemory(){ return safeParse(localStorage.getItem('mb_speaker_memory'), {}); }
+function saveSpeakerMemory(mem){ safeSetItem('mb_speaker_memory', JSON.stringify(mem)); }
+function rememberSpeakerRole(name, role){
+  const mem = loadSpeakerMemory();
+  mem[name.trim().toLowerCase()] = role;
+  saveSpeakerMemory(mem);
+}
+function recalledSpeakerRole(name){
+  const mem = loadSpeakerMemory();
+  return mem[name.trim().toLowerCase()] || null;
+}
+
 function detectSpeakers(){
   const text = document.getElementById('mInput').value;
   const numeric = new Set();
@@ -1364,22 +1381,63 @@ function detectSpeakers(){
   wrap.classList.remove('hidden');
   if(!detectedSpeakers.length){
     list.innerHTML = '<p class="caption">No "Speaker N" labels or repeated "Name:" prefixes found in the notes.</p>';
+    document.getElementById('speakerSuggestBtn').classList.add('hidden');
     return;
   }
+  document.getElementById('speakerSuggestBtn').classList.remove('hidden');
+  renderSpeakerMapList();
+}
+function renderSpeakerMapList(){
+  const list = document.getElementById('speakerMapList');
   const roles = ['Chairman/Chairperson','Director','GM','Manager','Secretary','Member','Invitee','Other (type name/role)'];
   list.innerHTML = detectedSpeakers.map(sp=>{
     const safeKey = sp.key.replace(/[^A-Za-z0-9]/g,'_');
+    const recalled = !sp.isNumeric ? recalledSpeakerRole(sp.key) : null;
+    const aiGuess = sp.aiSuggestion || '';
+    const preselect = recalled && roles.includes(recalled) ? recalled : '';
     return `
     <div class="grid2" style="margin-bottom:8px;">
-      <div style="align-self:center;">${escapeHtml(sp.display)}${sp.isNumeric?'':' <span class="tag noted">detected name</span>'}</div>
+      <div style="align-self:center;">${escapeHtml(sp.display)}
+        ${sp.isNumeric?'':' <span class="tag noted">detected name</span>'}
+        ${recalled ? ` <span class="tag decision" title="Remembered from a previous meeting">remembered: ${escapeHtml(recalled)}</span>` : ''}
+        ${aiGuess ? ` <span class="tag discussion" title="AI suggestion, not applied until you confirm">AI suggests: ${escapeHtml(aiGuess)}</span>` : ''}
+      </div>
       <div>
         <select id="spkRole_${safeKey}" onchange="document.getElementById('spkCustom_${safeKey}').classList.toggle('hidden', this.value!=='Other (type name/role)')">
-          ${roles.map(r=>`<option ${!sp.isNumeric && r==='Other (type name/role)' ? '':''}>${r}</option>`).join('')}
+          ${roles.map(r=>`<option ${r===preselect?'selected':''}>${r}</option>`).join('')}
         </select>
-        <input type="text" id="spkCustom_${safeKey}" placeholder="Name or role" class="hidden" style="margin-top:4px;">
+        <input type="text" id="spkCustom_${safeKey}" placeholder="Name or role" value="${escapeHtml(!preselect ? (aiGuess||'') : '')}" class="${preselect?'hidden':''}" style="margin-top:4px;">
       </div>
     </div>`;
-  }).join('') + '<div class="caption" style="margin-top:6px;">For a detected name, mapping it to a role replaces that name with the role throughout your notes — leave it as "Other" with the name unchanged if you just want to confirm it, not replace it.</div>';
+  }).join('') + '<div class="caption" style="margin-top:6px;">For a detected name, mapping it to a role replaces that name with the role throughout your notes — leave it as "Other" with the name unchanged if you just want to confirm it, not replace it. Confirmed name→role mappings are remembered for next time; nothing is ever auto-applied.</div>';
+  // show "Other" custom box pre-selected if no role matched
+  detectedSpeakers.forEach(sp=>{
+    const safeKey = sp.key.replace(/[^A-Za-z0-9]/g,'_');
+    const recalled = !sp.isNumeric ? recalledSpeakerRole(sp.key) : null;
+    if(!recalled){
+      const sel = document.getElementById('spkRole_'+safeKey);
+      if(sel) sel.value = 'Other (type name/role)';
+    }
+  });
+}
+async function suggestSpeakerRolesAI(){
+  const text = document.getElementById('mInput').value;
+  if(!detectedSpeakers.length){ showToast('Run "Detect speaker labels" first.', 'error'); return; }
+  if(!confirmAIUse('This transcript will be sent so the AI can suggest (not assign) likely roles for the detected speakers, based on context clues in the text.')) return;
+  document.getElementById('speakerSuggestBtn').disabled = true;
+  try{
+    const sys = `You suggest — never assert — who a labelled speaker in a meeting transcript might be, based only on contextual clues actually present in the text (e.g. "Chairman said...", "GM directed...", someone being addressed by name/title). Return ONLY JSON: {"suggestions":{"<speaker label exactly as given>":"<short suggested name or role, or '' if no real clue exists>"}}. Never invent a name that doesn't appear in or near that speaker's lines. If unsure, return ''.`;
+    const labels = detectedSpeakers.map(sp=>sp.display);
+    const r = await callClaude(sys, `Speaker labels to consider: ${JSON.stringify(labels)}\n\nTranscript:\n"""${text}"""`, 800);
+    const parsed = parseJSON(r);
+    detectedSpeakers.forEach(sp=>{ sp.aiSuggestion = (parsed.suggestions && parsed.suggestions[sp.display]) || ''; });
+    renderSpeakerMapList();
+    showToast('AI suggestions added below — review and confirm, nothing is applied yet.', 'ok');
+  }catch(err){
+    showToast('Could not get AI suggestions: '+err.message, 'error');
+  }finally{
+    document.getElementById('speakerSuggestBtn').disabled = false;
+  }
 }
 function applySpeakerMap(){
   let text = document.getElementById('mInput').value;
@@ -1393,6 +1451,7 @@ function applySpeakerMap(){
       if(!custom) return; // "Other" with nothing typed = leave this one unchanged
       label = custom;
     }
+    if(!sp.isNumeric) rememberSpeakerRole(sp.key, label);
     const pattern = sp.isNumeric ? ('\\bSpeaker\\s+'+sp.key+'\\b') : ('\\b'+sp.key.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b');
     text = text.replace(new RegExp(pattern,'g'), label);
   });
